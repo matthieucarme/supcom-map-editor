@@ -206,10 +206,20 @@ public partial class MainWindow : Window
 
     private async void OnOpenMap(object? sender, RoutedEventArgs e)
     {
+        // Default the picker to <SC install>/maps/ when we know it — that's where the user keeps
+        // their maps and where saves land too. Falls back to platform default if not detected.
+        Avalonia.Platform.Storage.IStorageFolder? startFolder = null;
+        var mapsDir = !string.IsNullOrWhiteSpace(Vm.GameData.GamePath)
+            ? System.IO.Path.Combine(Vm.GameData.GamePath!, "maps")
+            : null;
+        if (mapsDir != null && System.IO.Directory.Exists(mapsDir))
+            startFolder = await StorageProvider.TryGetFolderFromPathAsync(mapsDir);
+
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Open Supreme Commander Map",
             AllowMultiple = false,
+            SuggestedStartLocation = startFolder,
             FileTypeFilter =
             [
                 new FilePickerFileType("SC Map Files") { Patterns = ["*.scmap"] },
@@ -221,37 +231,29 @@ public partial class MainWindow : Window
         {
             var path = files[0].TryGetLocalPath();
             if (path != null)
-            {
                 Vm.LoadMap(path);
-            }
         }
     }
 
-    private void OnSaveMap(object? sender, RoutedEventArgs e)
+    private async void OnSaveMap(object? sender, RoutedEventArgs e)
     {
+        // Compute the canonical save folder (<SC>/maps/<MapName>/). Prompt only if it already
+        // exists on disk AND isn't the folder we originally loaded from.
+        var (folder, error) = Vm.GetCanonicalSaveFolder();
+        if (folder == null)
+        {
+            await new InfoDialog("Cannot save", error ?? "Unknown error.").ShowDialog(this);
+            return;
+        }
+        if (Vm.CanonicalFolderRequiresOverwriteConfirm())
+        {
+            var overwrite = await new ConfirmDialog(
+                "Overwrite existing map?",
+                $"A folder already exists at:\n\n{folder}\n\nSaving will overwrite its .scmap and Lua files. Continue?")
+                .ShowDialogAsync(this);
+            if (!overwrite) return;
+        }
         Vm.SaveMap();
-    }
-
-    private async void OnSaveMapAs(object? sender, RoutedEventArgs e)
-    {
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save Supreme Commander Map",
-            DefaultExtension = "scmap",
-            FileTypeChoices =
-            [
-                new FilePickerFileType("SC Map Files") { Patterns = ["*.scmap"] }
-            ]
-        });
-
-        if (file != null)
-        {
-            var path = file.TryGetLocalPath();
-            if (path != null)
-            {
-                Vm.SaveMapAs(path);
-            }
-        }
     }
 
     private void OnUndo(object? sender, RoutedEventArgs e) => Vm.Undo();
@@ -390,35 +392,6 @@ private async void OnRenameMap(object? sender, RoutedEventArgs e)
         SkiaViewport.RefreshHeightmap();
         SkiaViewport.RefreshMarkers();
         RefreshScaleRadios();
-    }
-
-    private async void OnSetGameFolder(object? sender, RoutedEventArgs e)
-    {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Pick the Supreme Commander install folder (the one containing gamedata/)",
-            AllowMultiple = false,
-        });
-        if (folders.Count == 0) return;
-        var path = folders[0].TryGetLocalPath();
-        if (path == null)
-        {
-            await new InfoDialog("Error", "Couldn't resolve a local path from that location.").ShowDialog(this);
-            return;
-        }
-
-        bool ok = Vm.SetGameInstallPath(path);
-        if (ok && Vm.CurrentMap != null)
-        {
-            GlViewport.SetGameData(Vm.GameData);
-            GlViewport.InvalidateTextures();
-            GlViewport.RequestTopDownSnapshot();
-            SkiaViewport.MarkerIcons = new SupremeCommanderEditor.App.Services.MarkerIconService(Vm.GameData);
-            SkiaViewport.RefreshMarkers();
-        }
-        // Always show the diagnostic so the user can confirm what was detected (or what failed).
-        await new InfoDialog(ok ? "Game folder OK" : "Game folder INVALIDE", Vm.BuildDiagnostics())
-            .ShowDialog(this);
     }
 
     private async void OnDiagnostics(object? sender, RoutedEventArgs e)

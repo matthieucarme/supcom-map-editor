@@ -101,40 +101,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     public MainWindowViewModel()
     {
-        // Try the user's saved path first; fall back to auto-detection; fall back to warning.
-        if (!string.IsNullOrWhiteSpace(Settings.GameInstallPath) && GameData.TryInitialize(Settings.GameInstallPath))
-        {
+        // Auto-detect Supreme Commander (vanilla preferred) on every startup — no manual folder
+        // setting any more. If detection fails the editor still runs with fallback height colors.
+        if (GameData.TryInitialize())
             StatusText = $"Game data: {GameData.GamePath}";
-        }
-        else if (GameData.TryInitialize())
-        {
-            StatusText = $"Game data: {GameData.GamePath}";
-            Settings.GameInstallPath = GameData.GamePath;
-            Settings.Save();
-        }
         else
-        {
-            StatusText = "Supreme Commander not found — textures will use height-color fallback. Settings → Set game folder…";
-        }
-    }
-
-    /// <summary>Reload textures from a user-chosen install folder. Returns true on success.</summary>
-    public bool SetGameInstallPath(string folder)
-    {
-        GameData.Dispose();
-        if (!GameData.TryInitialize(folder))
-        {
-            StatusText = $"Invalid folder: no gamedata/*.scd in {folder}";
-            return false;
-        }
-        Settings.GameInstallPath = GameData.GamePath;
-        Settings.Save();
-        StatusText = $"Game data: {GameData.GamePath} ({GameData.ArchiveCount} .scd)";
-        // Force texture re-upload on the GL view + rescan the texture library + rebuild categories.
-        TexturesVersion++;
-        _textureLibrary = null;
-        RefreshViewport3DCategories();
-        return true;
+            StatusText = "Supreme Commander not found — install in a default Steam library to enable textures and save.";
     }
 
     /// <summary>Multi-line report explaining the current GameData state and per-strata lookups.</summary>
@@ -143,7 +115,6 @@ public partial class MainWindowViewModel : ObservableObject
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"OS: {Environment.OSVersion}");
         sb.AppendLine($"Settings file: {AppSettingsService.GetPath()}");
-        sb.AppendLine($"Saved game path: {Settings.GameInstallPath ?? "(none)"}");
         sb.AppendLine();
         sb.AppendLine($"GameData initialized: {GameData.IsInitialized}");
         sb.AppendLine($"GameData.GamePath: {GameData.GamePath ?? "(null)"}");
@@ -228,12 +199,53 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Resolve the canonical save folder for the current map: <c>&lt;game&gt;/maps/&lt;sanitized map name&gt;/</c>.
+    /// Returns (null, error message) when the game folder isn't detected or the map name is empty.
+    /// </summary>
+    public (string? folder, string? error) GetCanonicalSaveFolder()
+    {
+        if (CurrentMap == null) return (null, "No map loaded.");
+        if (string.IsNullOrWhiteSpace(GameData.GamePath))
+            return (null, "Supreme Commander install not detected — cannot derive a save folder.");
+        var invalid = Path.GetInvalidFileNameChars();
+        var sanitized = string.Concat((CurrentMap.Info.Name ?? "").Where(c => Array.IndexOf(invalid, c) < 0)).Trim();
+        if (string.IsNullOrEmpty(sanitized))
+            return (null, "Map name is empty — set one in the Map Info tab first.");
+        return (Path.Combine(GameData.GamePath!, "maps", sanitized), null);
+    }
+
+    /// <summary>True if the canonical target folder already exists on disk AND it isn't the folder
+    /// the current map was loaded from (in which case overwriting is implicit and no prompt needed).</summary>
+    public bool CanonicalFolderRequiresOverwriteConfirm()
+    {
+        var (folder, _) = GetCanonicalSaveFolder();
+        if (folder == null) return false;
+        if (!Directory.Exists(folder)) return false;
+        if (CurrentFilePath != null && string.Equals(
+                Path.GetFullPath(Path.GetDirectoryName(CurrentFilePath)!),
+                Path.GetFullPath(folder),
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        return true;
+    }
+
     [RelayCommand]
     public void Save() => SaveMap();
 
     public void SaveMap()
     {
-        if (CurrentMap == null || CurrentFilePath == null) return;
+        if (CurrentMap == null) return;
+        // Re-derive the canonical target every time : <game>/maps/<MapName>/<MapName>.scmap
+        var (folder, error) = GetCanonicalSaveFolder();
+        if (folder == null)
+        {
+            StatusText = error ?? "Cannot save.";
+            return;
+        }
+        var baseFileName = Path.GetFileName(folder); // already sanitised
+        Directory.CreateDirectory(folder);
+        CurrentFilePath = Path.Combine(folder, $"{baseFileName}.scmap");
 
         try
         {
@@ -274,13 +286,6 @@ public partial class MainWindowViewModel : ObservableObject
         {
             StatusText = $"Error saving map: {ex.Message}";
         }
-    }
-
-    public void SaveMapAs(string scmapPath)
-    {
-        if (CurrentMap == null) return;
-        CurrentFilePath = scmapPath;
-        SaveMap();
     }
 
     /// <summary>

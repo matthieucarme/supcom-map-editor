@@ -78,7 +78,6 @@
                 <MenuItem Header="_Open..." Click="OnOpenMap"/>
                 <Separator/>
                 <MenuItem Header="_Save" Click="OnSaveMap" IsEnabled="{Binding HasMap}"/>
-                <MenuItem Header="Save _As..." Click="OnSaveMapAs" IsEnabled="{Binding HasMap}"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="OnExit"/>
             </MenuItem>
@@ -93,7 +92,6 @@
                 <MenuItem Header="Procedural _map…" Click="OnGenerateMap"/>
             </MenuItem>
             <MenuItem Header="_Settings">
-                <MenuItem Header="Set _game folder…" Click="OnSetGameFolder"/>
                 <MenuItem Header="_Diagnostics…" Click="OnDiagnostics"/>
             </MenuItem>
         </Menu>

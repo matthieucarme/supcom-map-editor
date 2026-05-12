@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SupremeCommanderEditor.App.Views.ConfirmDialog"
+        Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#1E1E1E">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button Content="Cancel" Click="OnCancel" Padding="16,6" FontSize="12"/>
+            <Button Content="Overwrite" Click="OnConfirm" Padding="16,6" FontSize="12"
+                    Background="#A04040" Foreground="White" FontWeight="Bold"/>
+        </StackPanel>
+        <TextBlock x:Name="Body" Foreground="#DDD" FontSize="13" TextWrapping="Wrap"/>
+    </DockPanel>
+</Window>

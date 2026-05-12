@@ -144,27 +144,29 @@ public class GameDataService
 
     private static string? FindGamePath()
     {
+        // Vanilla "Supreme Commander" gets priority over Forged Alliance. The editor targets
+        // vanilla SupCom 1; if both are installed we want to land on the vanilla maps folder
+        // (and read vanilla gamedata) so save paths match what the user is actually playing.
         foreach (var lib in SteamLibraryDirs())
         {
-            // Steam folder names: vanilla "Supreme Commander", FA "Supreme Commander Forged Alliance"
-            foreach (var name in new[] { "Supreme Commander Forged Alliance", "Supreme Commander" })
+            foreach (var name in new[] { "Supreme Commander", "Supreme Commander Forged Alliance" })
             {
                 var candidate = Path.Combine(lib, "steamapps", "common", name);
                 if (IsValidGameDir(candidate)) return candidate;
             }
         }
 
-        // Non-Steam fallbacks (GOG, manual installs on common drive letters)
         var driveLetters = new[] { "C", "D", "E", "F", "G", "H" };
         var subpaths = new[]
         {
-            @"Program Files (x86)\Steam\steamapps\common\Supreme Commander Forged Alliance",
             @"Program Files (x86)\Steam\steamapps\common\Supreme Commander",
-            @"Program Files\Steam\steamapps\common\Supreme Commander Forged Alliance",
             @"Program Files\Steam\steamapps\common\Supreme Commander",
+            @"Program Files (x86)\Steam\steamapps\common\Supreme Commander Forged Alliance",
+            @"Program Files\Steam\steamapps\common\Supreme Commander Forged Alliance",
+            @"Games\Supreme Commander",
+            @"GOG Games\Supreme Commander",
             @"GOG Games\Supreme Commander Forged Alliance",
             @"Games\Supreme Commander Forged Alliance",
-            @"Games\Supreme Commander",
         };
         foreach (var letter in driveLetters)
             foreach (var sub in subpaths)
@@ -173,15 +175,12 @@ public class GameDataService
                 if (IsValidGameDir(p)) return p;
             }
 
-        // Linux Steam default
-        var linuxSteam = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".local/share/Steam/steamapps/common/Supreme Commander Forged Alliance");
-        if (IsValidGameDir(linuxSteam)) return linuxSteam;
-        linuxSteam = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".local/share/Steam/steamapps/common/Supreme Commander");
-        if (IsValidGameDir(linuxSteam)) return linuxSteam;
+        var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        foreach (var name in new[] { "Supreme Commander", "Supreme Commander Forged Alliance" })
+        {
+            var p = Path.Combine(userHome, ".local/share/Steam/steamapps/common", name);
+            if (IsValidGameDir(p)) return p;
+        }
 
         return null;
     }
