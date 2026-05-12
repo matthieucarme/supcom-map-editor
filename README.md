@@ -6,6 +6,15 @@ Built with Avalonia + OpenGL on .NET 9.
 It was mainly built for supcom vanilla, I did not test it on forged alliance, but should work on it.
 It is 100% vibe coded...
 
+## Install
+
+Grab the latest build from the [**Releases page**](https://github.com/matthieucarme/supcom-map-editor/releases/latest) — no installer, no dependencies, just unzip / `chmod` and run.
+
+- **Windows** : [`SupremeCommanderMapEditor.zip`](https://github.com/matthieucarme/supcom-map-editor/releases/latest/download/SupremeCommanderMapEditor.zip) — unzip, double-click `SupremeCommanderMapEditor.exe`.
+- **Linux** : [`SupremeCommanderMapEditor-x86_64.AppImage`](https://github.com/matthieucarme/supcom-map-editor/releases/latest/download/SupremeCommanderMapEditor-x86_64.AppImage) — `chmod +x SupremeCommanderMapEditor-x86_64.AppImage` then double-click. Works on any distro, no install needed.
+
+Or build from source — see [Build & Run](#build--run).
+
 ## Features
 
 - Read & write `.scmap` v53 / v56 / v60 (binary-identical round-trip)
