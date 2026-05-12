@@ -18,7 +18,8 @@ public static class MapStrataNormalizer
     /// Expand the TerrainTextures array to <see cref="TargetSlotCount"/> slots. If the map
     /// already has that many (or more), this is a no-op. For short v53 maps, the original last
     /// slot is treated as the macro overlay and moved to slot 9; new intermediate slots are
-    /// initialised empty.
+    /// initialised empty AND the corresponding splatmap channels are zeroed so the shader
+    /// doesn't render magenta where the old macro mask data still references those slots.
     /// </summary>
     public static void EnsureTenSlots(ScMap map)
     {
@@ -30,9 +31,7 @@ public static class MapStrataNormalizer
         // Slot 0 (base) and slots 1..oldLen-2 carry over identically.
         for (int i = 0; i < oldLen - 1; i++)
             expanded[i] = map.TerrainTextures[i];
-        // Old last slot = macro overlay → goes to slot 9. The splatmap's mask1.* channels for the
-        // intermediate slots were not used in the shader's "short v53" branch, so leaving the new
-        // intermediate slots empty doesn't change rendering.
+        // Old last slot = macro overlay → goes to slot 9.
         if (oldLen > 0)
             expanded[MacroSlot] = map.TerrainTextures[oldLen - 1];
         else
@@ -41,10 +40,34 @@ public static class MapStrataNormalizer
         for (int i = oldLen - 1; i < MacroSlot; i++)
             if (i >= 0 && expanded[i] == null)
                 expanded[i] = new TerrainTexture();
-        // Defensive: fill any null left over.
         for (int i = 0; i < TargetSlotCount; i++)
             expanded[i] ??= new TerrainTexture();
 
         map.TerrainTextures = expanded;
+
+        // Zero out splatmap channels for any slot that's now empty (oldLen-1 through 8). In the
+        // original short-v53 layout the slot at index N-1 was the alpha-blended macro overlay;
+        // its mask channel was rendered as junk by SC1's engine (alpha-only blend, not splatmap)
+        // but our normalised renderer blends slot 5..8 via mask1 — so we must clear that data,
+        // otherwise the now-empty slot renders as magenta wherever the channel was non-zero.
+        ClearMaskChannelsForSlots(map, oldLen - 1, 8);
+    }
+
+    private static void ClearMaskChannelsForSlots(ScMap map, int fromSlot, int toSlot)
+    {
+        for (int slot = fromSlot; slot <= toSlot; slot++)
+        {
+            if (slot < 1 || slot > 8) continue;
+            var mask = slot <= 4 ? map.TextureMaskLow : map.TextureMaskHigh;
+            if (mask?.DdsData == null) continue;
+            const int headerSize = 128;
+            int pixels = mask.Width * mask.Height;
+            if (mask.DdsData.Length < headerSize + pixels * 4) continue;
+            int withinMask = ((slot - 1) % 4) + 1;
+            // Match the channel-offset convention used by MapGenerator.WriteStrataChannel.
+            int channelOffset = withinMask switch { 1 => 2, 2 => 1, 3 => 0, 4 => 3, _ => 0 };
+            for (int p = 0; p < pixels; p++)
+                mask.DdsData[headerSize + p * 4 + channelOffset] = 0;
+        }
     }
 }
