@@ -388,6 +388,47 @@ inherit it → no SmartScreen warning. Avoids buying a code-signing cert (~$200-
 friends-use). Implemented via a stage folder so that `ZipDirectory` doesn't recursively zip
 itself.
 
+## Linux distribution (self-contained + AppImage)
+
+```bash
+dotnet publish src/SupremeCommanderEditor.App -p:PublishProfile=linux-x64
+tools/build-appimage.sh
+```
+
+Profile `linux-x64.pubxml` mirrors `win-x64.pubxml` (RID swapped, PDB strip target identical).
+Produces a self-contained ELF `SupremeCommanderMapEditor` (~56 MB) under
+`bin/publish/linux-x64/`.
+
+`tools/build-appimage.sh` then packages that ELF into
+`SupremeCommanderMapEditor-x86_64.AppImage` (~49 MB) — one-file, no install, double-clickable,
+works on any glibc distro. The script:
+1. Builds an AppDir layout (`AppRun` script, `.desktop` file, icon, `usr/bin/<binary>`).
+2. Fetches `appimagetool-x86_64.AppImage` on the fly (cached under `bin/publish/linux-x64/.tools/`)
+   if not installed system-wide.
+3. Invokes it with `--appimage-extract-and-run` so it works on CI runners with no FUSE.
+
+The desktop entry has `Categories=Game;Development;` so KDE/GNOME activities place it sensibly.
+The icon (`supcom.png`, 48×48 from the SC game .ico) is mounted both at the AppDir root and
+under `usr/share/icons/hicolor/48x48/apps/` to satisfy any launcher convention.
+
+## Release pipeline (`.github/workflows/release.yml`)
+
+CI workflow triggers on every `v*` tag push (e.g. `git tag v0.2.0 && git push --tags`). Three
+parallel-ish jobs:
+- `build-windows` (Windows runner) — runs the `win-x64` publish, uploads
+  `SupremeCommanderMapEditor.zip` as an artifact.
+- `build-linux` (Ubuntu runner) — runs the `linux-x64` publish + `tools/build-appimage.sh`,
+  uploads the AppImage as an artifact.
+- `release` (after the two) — downloads both artifacts, creates a GitHub Release with
+  `softprops/action-gh-release@v2`, auto-generates release notes from the commits since the
+  previous tag, attaches both binaries.
+
+In the README, download links use the **`releases/latest/download/<filename>`** pattern (GitHub
+auto-redirects to the most recent release), so the README never needs editing when a new tag
+goes out.
+
+Manual fallback: build locally, drag-drop the artifacts on github.com/.../releases/new.
+
 ## Settings + Diagnostics
 
 - `AppSettingsService`: JSON in `%APPDATA%\SupremeCommanderMapEditor\settings.json`. Persists the
