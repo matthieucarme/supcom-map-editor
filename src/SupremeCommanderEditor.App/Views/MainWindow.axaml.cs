@@ -755,17 +755,28 @@ private async void OnRenameMap(object? sender, RoutedEventArgs e)
         }
 
         var choices = new List<TextureReplaceDialog.StrataChoice>();
-        for (int strata = 1; strata <= maxPaintable; strata++)
+        // The base layer (strata 0) is the always-visible substrate beneath every splatmap blend,
+        // and the macro slot (last index in v53, fixed index 9 in v56+) is the alpha-blended
+        // overlay on top of everything. Both must be replaceable here too — otherwise users see
+        // patches of the original base bleed through after "changing all the textures".
+        int totalSlots = map.TerrainTextures.Length;
+        int macroSlot = totalSlots <= 6 ? totalSlots - 1 : 9;
+        void AddChoice(int strata, string title)
         {
+            if (strata < 0 || strata >= totalSlots) return;
             var path = map.TerrainTextures[strata].AlbedoPath ?? "";
             var thumb = ResolveThumb(path)
                         ?? Services.MapStrataPlaceholder.GetIcon(strata, !string.IsNullOrEmpty(path));
             var label = string.IsNullOrEmpty(path)
                 ? "(empty)"
                 : System.IO.Path.GetFileNameWithoutExtension(path);
-            choices.Add(new TextureReplaceDialog.StrataChoice(
-                strata, $"Strata {strata}", label, thumb));
+            choices.Add(new TextureReplaceDialog.StrataChoice(strata, title, label, thumb));
         }
+        AddChoice(0, "Strata 0 (base)");
+        for (int strata = 1; strata <= maxPaintable; strata++)
+            AddChoice(strata, $"Strata {strata}");
+        if (macroSlot > maxPaintable)
+            AddChoice(macroSlot, $"Strata {macroSlot} (macro)");
 
         var newKey = newAlbedoPath.Replace('\\', '/').ToLowerInvariant();
         var libEntry = thumbsByPath.TryGetValue(newKey, out var v2) ? v2.entry : null;

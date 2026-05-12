@@ -1083,9 +1083,10 @@ public partial class MainWindowViewModel : ObservableObject
     public void ApplyStrataReplacement(int strata, string albedoPath)
     {
         if (CurrentMap == null) return;
-        int upper = MaxPaintableStrata();
-        if (strata < 1 || strata > upper) return;
+        // Allow strata 0 (base) and the macro slot (last index) on top of the regular paintable
+        // range, so the replace dialog can target every visible texture on the map.
         var textures = CurrentMap.TerrainTextures;
+        if (strata < 0 || strata >= textures.Length) return;
         var replaced = System.IO.Path.GetFileNameWithoutExtension(textures[strata].AlbedoPath ?? "");
         AssignTextureToStrata(textures, strata, albedoPath);
         SplatmapTool.StrataIndex = strata;
