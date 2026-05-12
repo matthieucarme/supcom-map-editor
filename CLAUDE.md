@@ -1,6 +1,9 @@
 # Supreme Commander Map Editor
 
-Cross-platform map editor (Windows + Linux) for Supreme Commander 1 / Forged Alliance.
+Cross-platform map editor (Windows + Linux) for **Supreme Commander 1** (vanilla 2007).
+Forged Alliance is NOT a target — every save is emitted in the strict vanilla v53 format so the
+original SC1 engine loads it without crashing. The editor still reads FA maps (v56/v60), it just
+writes them back as v53. See `## SC1 vanilla compatibility` below for the long list of edge cases.
 
 ## Tech Stack
 
@@ -63,16 +66,104 @@ tests/
 
 ## .scmap format
 
-Supports versions **53** (vanilla SupCom), **56**, and **60** (Forged Alliance).
+Targets **v53** (vanilla SupCom 1). Also reads **v54** (rare), **v56**, **v60** (FA) but always
+writes v53.
 
 ### v53 vs v56+ differences
-- No null byte after the heightmap
-- Env cubemaps: simple string (not count + pairs)
-- Textures section: tileset name + count + layers (albedo_path + normal_path + albedo_scale + normal_scale)
-- No separate cartographic section
-- Texture masks: count=1 prefix before each DDS blob
+- No null byte after the heightmap (v56+ has one)
+- Env cubemaps: simple string (not count + pairs). v54 follows v53 here too.
+- Textures section: tileset name + variable count + layers (albedo_path + normal_path + albedo_scale + normal_scale). v56+ has a fixed 10 layers and a cartographic section.
+- Texture masks: count=1 prefix before each DDS blob — **but not always** (see vanilla quirks)
 - No water map DDS (just the auxiliary data)
 - No skybox (v60 only)
+
+### Vanilla edge cases (per-file quirks we discovered the hard way)
+
+Real vanilla `.scmap` files don't match a single canonical layout. Concrete differences that
+break naive readers/writers:
+
+| Map(s) | Quirk | Fix |
+|---|---|---|
+| SCMP_018, _029 (v56) | 0x00 padding byte right after the heightmap | Reader skips it for VersionMinor > 53; writer emits it. |
+| SCMP_021 (v54) | Cubemap section uses **v53 format** (single string), not v56's count+pairs | Branch on `VersionMinor < 56` for cubemap parsing. |
+| SCMP_001, _009 (v53) | Texture masks prefixed with `count=1` | Read sniff: if first int is 1 → count-prefix mode. |
+| SCMP_030, _040 (v53) | Texture masks NOT prefixed (just `length + DDS`) | Same sniff: int != 1 → rewind, plain DDS blob. Flag stored on ScMap so writer round-trips identically. |
+| SCMP_018 (v56) | Water-map DDS prefixed with `count=1` | Sniff at the water-map section too. |
+| SCMP_029 (v56) | Water-map DDS NOT prefixed (just `length + DDS`) | Sniff: int=0 means no water-map (skip), int=1 means count prefix, else rewind. Flag stored. |
+| SCMP_029, _030 (4096-sized) | NormalMap has 4 DDS blobs (count=4) instead of 1 | Reader loops, writer honours stored extras list. |
+| SCMP_029, _030 (4096-sized) | Undocumented ~25-37 MB blob between watermaps and props | Reader scans forward for the props count (int < 1M followed by '/' starting a BlueprintPath), captures the bytes in between as opaque `PostWatermapsExtra` and writes them back verbatim. |
+| SCMP_039 | `SCMP_039.scmap` but companion lua files in lowercase (`scmp_039_save.lua`) on disk | Companion lookup walks the directory case-insensitively. |
+| SCMP_021 (v54) | Slot 0 albedo = bare `snow_albedo.dds` (no path) | `MapStrataNormalizer.NormalizeRelativeTexturePaths` infers `/env/<tileset>/layers/<tileset>_` prefix from the other slots' paths. |
+
+71/71 vanilla maps in `<Steam>/Supreme Commander/maps/` now read with binary-identical round-trip.
+
+## SC1 vanilla compatibility — what the engine actually demands
+
+Producing a `.scmap` SC1 will load is more about the **companion Lua** files than the binary. SC1's
+engine crashes on missing fields it expects.
+
+### `_scenario.lua` — required structure
+
+| Field | Notes |
+|---|---|
+| `name`, `description`, `type`, `starts`, `preview`, `size`, `norushradius` | Standard. We round-trip them. |
+| `norushoffsetX_<ARMY>_N`, `norushoffsetY_<ARMY>_N` | One pair per army. |
+| `map`, `save`, `script` | Absolute `/maps/<folder>/<base>.<ext>` paths. We always regenerate from the current folder. |
+| `Configurations.standard.teams[].armies` | Standard FFA team list — we round-trip. |
+| `Configurations.standard.customprops` | **Mandatory to preserve verbatim.** Maps with civilians ship `['ExtraArmies'] = STRING('ARMY_9 NEUTRAL_CIVILIAN')`; without it SC1 crashes when it tries to spawn entities under the undeclared armies. Stored on `MapInfo.CustomProps`. |
+| ~~`map_version`~~ | **Never emit.** It's a FAF extension. Vanilla SC1 shows it as `(N)` in the lobby and **crashes on selection**. |
+
+### `_save.lua` — required structure
+
+| Section | Notes |
+|---|---|
+| `Scenario.next_area_id` | Hardcoded `'1'` is fine. |
+| `Scenario.Props = { }` | Empty — props live in the .scmap, not here. |
+| `Scenario.Areas = { }` | Empty. |
+| `Scenario.MasterChain['_MASTERCHAIN_'].Markers` | All scene markers (mass, hydro, spawns, AI, etc.). |
+| `Scenario.Chains = { }` | Empty. |
+| `Scenario.next_queue_id`, `Scenario.Orders = { }` | **Required.** Engine crashes if missing. |
+| `Scenario.next_platoon_id`, `Scenario.Platoons = { }` | **Required.** Same crash mode. |
+| `Scenario.next_army_id`, `next_group_id`, `next_unit_id` | Counters; hardcoded values are fine. |
+| `Scenario.Armies['ARMY_N']` | One entry per declared army (+ ARMY_9 / NEUTRAL_CIVILIAN when ExtraArmies is present). |
+
+### Per-marker required fields
+
+| Field | When | Why |
+|---|---|---|
+| `['size']`, `['resource']`, `['amount']` | Mass, Hydrocarbon | Resource readout. |
+| `['color']` | Always | Editor display + minimap. |
+| `['type']` | Always | The marker type string ("Mass", "Naval Area", "Blank Marker", …). |
+| `['prop']` | Always for the standard types | Engine spawns this prop blueprint at the marker position. **Missing it crashes SC1 on map load.** Defaults per type in `SaveLuaWriter.DefaultPropFor`. |
+| `['hint'] = BOOLEAN(true)` | Strategic markers (CombatZone, DefensePoint, RallyPoint, NavalArea, ExpansionArea, ProtectedExperimentalConstruction) | AI module references these. Missing on a strategy marker → AI init crashes. Default `true` via `SaveLuaWriter.DefaultHintFor`. |
+| `['orientation']`, `['position']` | Always | Vec3. |
+| `['adjacentTo']` | AI path markers | Round-tripped from input. |
+
+### Terrain texture layout
+
+Vanilla v53 maps have exactly **6 TerrainTexture slots**: base(0) + 4 splatmap-blended(1..4) +
+macro(5). The macro is alpha-blended on top by the shader, not splatmap-blended. SC1's engine
+**crashes** when loading a v53 with 10 slots (we tried — that was the editor's old behaviour).
+
+- `MapStrataNormalizer.EnsureVanillaSlots(map)` runs at load time:
+  - v53 with `len < 6` → pad to 6 (push the original last slot to slot 5 = macro).
+  - v53 with `len > 6` (10 from a previous editor build) → **compact back to 6** if slots 5..8 are
+    empty and slot 9 carries the macro. Otherwise leave alone (user must have painted those slots).
+  - v56+ untouched.
+  - Always zero the mask channels for any empty paintable slot (anti-magenta).
+- `MaxPaintableStrata`: `len <= 6` → `len - 2` (= 4 for vanilla). `len > 6` → `len - 1` (= 9 for v56).
+- `TerrainRenderer._upperLayerIndex`: `_stratumCount <= 6 ? _stratumCount - 1 : 9`.
+- `MapGenerator` always produces 6-slot v53. Smart categories used: Grass(base), Rock, Dirt, Snow,
+  Plateau, macro. Beach and SeaFloor are dropped (only 4 splatmap channels available).
+- `NewMapService.CreateBlankMap` allocates 6 slots for v53, 10 for v56+.
+
+### Relative texture paths
+
+SCMP_021 ships with `slot[0].AlbedoPath = "snow_albedo.dds"` (no `/env/...` prefix). SC1 resolves
+this against `/env/<tileset>/layers/<tilesetPrefix>_<name>` (e.g. `/env/tundra/layers/Tund_snow_albedo.dds`).
+`MapStrataNormalizer.NormalizeRelativeTexturePaths` does the same inference from the other slots'
+paths before the texture cache tries to load anything. Without it the slot renders magenta wherever
+the splatmap is zero.
 
 ### Round-trip
 The reader/writer produces binary-identical files for the 3 test maps (SCMP_001, SCMP_009, SCCA_A01).
@@ -499,7 +590,11 @@ Manual fallback: build locally, drag-drop the artifacts on github.com/.../releas
   army reconciliation, civilian units round-trip.
 - [x] **Procedural map generator**: deterministic seed, N teams on a circle, flat plateaus carved
   at each spawn, smart texture set per biome, terrain-only symmetry (markers untouched). Outputs
-  `.scmap` v53 (vanilla SupCom) so generated maps load in both SC1 and Forged Alliance.
+  vanilla 6-slot v53 (base + Rock/Dirt/Snow/Plateau + macro) so generated maps load in the
+  original SC1 without crashing.
+- [x] **v1.0.0 — SC1 vanilla compatibility pass**: every quirk needed for saved maps to load in
+  the original 2007 engine (see `## SC1 vanilla compatibility`). 71/71 vanilla maps in
+  `<Steam>/Supreme Commander/maps` round-trip binary-identical through reader/writer.
 - [x] **Welcome screen**: three big buttons (New / Open / Generate) shown before any map is
   loaded.
 
