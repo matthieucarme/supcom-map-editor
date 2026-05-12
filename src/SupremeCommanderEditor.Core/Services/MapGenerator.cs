@@ -65,7 +65,10 @@ public static class MapGenerator
         DebugLog.Write($"[MapGen] Seed={opts.Seed} Size={size} Water={opts.HasWater} Teams=[{string.Join(",", opts.TeamPlayerCounts)}] Mass=[{string.Join(",", opts.TeamMassCounts)}] Symmetry={opts.Symmetry?.ToString() ?? "None"}");
         DebugLog.Write($"[MapGen] TexturesByCategory: {opts.TexturesByCategory.Count} entries");
         foreach (var kv in opts.TexturesByCategory) DebugLog.Write($"[MapGen]   {kv.Key} → {kv.Value}");
-        var map = NewMapService.CreateBlankMap(size, Math.Min(8, totalPlayers), opts.MapName);
+        // Target vanilla SupCom (v53) so generated maps open in the original 2007 game, not just
+        // Forged Alliance. v53 still supports a multi-layer texture array + splatmap, so the
+        // generator's smart-classified strata layout works fine.
+        var map = NewMapService.CreateBlankMap(size, Math.Min(8, totalPlayers), opts.MapName, versionMinor: 53);
 
         map.Water.HasWater = opts.HasWater;
         map.Water.Elevation       = opts.HasWater ? 25f : 0f;

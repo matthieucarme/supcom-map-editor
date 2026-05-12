@@ -59,19 +59,21 @@ public static class NewMapService
         map.Water = new WaterSettings { HasWater = false };
         map.WaveGenerators = [];
 
-        // Terrain textures
+        // Terrain textures — both v53 and v56+ allocate 10 slots so the splatmap channel layout
+        // (mask0 + mask1 → strata 1..8, plus base/macro) is fully usable by the procedural map
+        // generator regardless of the target version. v53's variable-length layer count means
+        // writing 10 layers is still legal even if vanilla maps usually have fewer.
         if (versionMinor <= 53)
         {
             map.TilesetName = "No Tileset";
-            map.TerrainTextures = [new TerrainTexture()];
         }
         else
         {
             map.CartographicRawBytes = new byte[24];
-            map.TerrainTextures = new TerrainTexture[10];
-            for (int i = 0; i < 10; i++)
-                map.TerrainTextures[i] = new TerrainTexture();
         }
+        map.TerrainTextures = new TerrainTexture[10];
+        for (int i = 0; i < 10; i++)
+            map.TerrainTextures[i] = new TerrainTexture();
 
         // No decals or props
         map.Decals = [];

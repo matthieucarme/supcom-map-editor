@@ -498,7 +498,8 @@ Manual fallback: build locally, drag-drop the artifacts on github.com/.../releas
   persisted settings, diagnostics dialog, broader install auto-detection, ground clamp on save,
   army reconciliation, civilian units round-trip.
 - [x] **Procedural map generator**: deterministic seed, N teams on a circle, flat plateaus carved
-  at each spawn, smart texture set per biome, terrain-only symmetry (markers untouched).
+  at each spawn, smart texture set per biome, terrain-only symmetry (markers untouched). Outputs
+  `.scmap` v53 (vanilla SupCom) so generated maps load in both SC1 and Forged Alliance.
 - [x] **Welcome screen**: three big buttons (New / Open / Generate) shown before any map is
   loaded.
 
