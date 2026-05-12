@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:SupremeCommanderEditor.App.Views"
+        x:Class="SupremeCommanderEditor.App.Views.TextureReplaceDialog"
+        Width="640" Height="480"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="BorderOnly"
+        Background="#1E1E22"
+        Title="Replace texture">
+
+    <DockPanel Margin="16">
+        <!-- Header: new texture preview + explanation -->
+        <Border DockPanel.Dock="Top" Padding="12" Background="#28282C" CornerRadius="4">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                <Image x:Name="NewTextureImage" Grid.RowSpan="2" Width="80" Height="80" Margin="0,0,12,0"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                <TextBlock Grid.Column="1" Grid.Row="0" FontWeight="Bold" Foreground="#EEE" FontSize="14"
+                           Text="Map texture limit reached"/>
+                <TextBlock Grid.Column="1" Grid.Row="1" Foreground="#BBB" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                           x:Name="ExplanationText"/>
+            </Grid>
+        </Border>
+
+        <!-- Bottom: cancel button -->
+        <Border DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel" Click="OnCancel" Padding="16,6" FontSize="12"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Center: clickable strata cards -->
+        <Border Margin="0,12,0,12">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="StrataItems">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="v:TextureReplaceDialog+StrataChoice">
+                            <Button Click="OnStrataPicked" Tag="{Binding Strata}"
+                                    Padding="8" Margin="4" Width="120" Height="160"
+                                    Background="#2A2A2E" BorderBrush="#444" BorderThickness="1"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Top">
+                                <StackPanel Spacing="6" HorizontalAlignment="Center">
+                                    <Image Source="{Binding Thumbnail}" Width="84" Height="84"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                    <TextBlock Text="{Binding StrataLabel}" Foreground="#CCC" FontSize="11" FontWeight="Bold"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding TextureLabel}" Foreground="#999" FontSize="10"
+                                               HorizontalAlignment="Center" MaxWidth="100"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SupremeCommanderEditor.App.Views.InfoDialog"
+        Title="Info"
+        Width="640" Height="500"
+        Background="#1E1E1E">
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+            <Button Content="Close" Click="OnClose"/>
+        </StackPanel>
+        <TextBox x:Name="Body"
+                 AcceptsReturn="True"
+                 IsReadOnly="True"
+                 TextWrapping="NoWrap"
+                 FontFamily="Consolas, Menlo, monospace"
+                 FontSize="12"
+                 Background="#111"
+                 Foreground="#DDD"
+                 BorderThickness="0"/>
+    </DockPanel>
+</Window>

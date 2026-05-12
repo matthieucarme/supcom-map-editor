@@ -1,0 +1,69 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SupremeCommanderEditor.Core\SupremeCommanderEditor.Core.csproj" />
+    <ProjectReference Include="..\SupremeCommanderEditor.Rendering\SupremeCommanderEditor.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+    <!-- Used by Win32SetWindowIcon on Windows (it requires an .ico from the published binary). -->
+    <None Include="Assets\supcom.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.0" />
+    <PackageReference Include="Avalonia.Skia" Version="12.0.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>SupremeCommanderMapEditor</AssemblyName>
+    <ApplicationManifest></ApplicationManifest>
+    <!-- Embeds the icon into the .exe itself (Windows shell / taskbar / Alt-Tab use this).
+         Avalonia's runtime Window.Icon binding uses the same .ico via AvaloniaResource. -->
+    <ApplicationIcon>Assets\supcom.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Publish defaults: one fully self-contained .exe, nothing on the side. These properties only
+       affect `dotnet publish`; `dotnet build` ignores them, so dev builds stay normal multi-file. -->
+  <PropertyGroup>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Avalonia + CommunityToolkit.Mvvm use reflection; trimming would silently break bindings. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <!-- After publish, pack the single .exe into a .zip. Distributing as .zip means Windows won't
+       propagate the Mark-of-the-Web to the extracted exe, so SmartScreen won't show a warning on
+       first launch (cheaper than buying a code-signing certificate). Only kicks in for Windows
+       publishes — checked via the .exe extension on the published output. -->
+  <Target Name="ZipPublishedExe" AfterTargets="Publish">
+    <PropertyGroup>
+      <_PublishedExe>$(PublishDir)$(AssemblyName).exe</_PublishedExe>
+      <_ZipStage>$(PublishDir)zipstage\</_ZipStage>
+      <_PublishedZip>$(PublishDir)$(AssemblyName).zip</_PublishedZip>
+    </PropertyGroup>
+    <!-- Stage just the .exe (ZipDirectory has no include filter, would zip itself recursively). -->
+    <RemoveDir Directories="$(_ZipStage)" Condition="Exists('$(_ZipStage)')"/>
+    <MakeDir Directories="$(_ZipStage)" Condition="Exists('$(_PublishedExe)')"/>
+    <Copy SourceFiles="$(_PublishedExe)" DestinationFolder="$(_ZipStage)"
+          Condition="Exists('$(_PublishedExe)')"/>
+    <Delete Files="$(_PublishedZip)" Condition="Exists('$(_PublishedZip)')"/>
+    <ZipDirectory SourceDirectory="$(_ZipStage)" DestinationFile="$(_PublishedZip)"
+                  Condition="Exists('$(_PublishedExe)')"/>
+    <RemoveDir Directories="$(_ZipStage)" Condition="Exists('$(_ZipStage)')"/>
+    <Message Importance="high" Text="Zipped → $(_PublishedZip)" Condition="Exists('$(_PublishedExe)')"/>
+  </Target>
+
+</Project>

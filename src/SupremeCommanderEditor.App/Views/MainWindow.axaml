@@ -1,0 +1,533 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SupremeCommanderEditor.App.ViewModels"
+        xmlns:controls="using:SupremeCommanderEditor.App.Controls"
+        x:Class="SupremeCommanderEditor.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
+        Icon="/Assets/supcom.ico"
+        Width="1400" Height="900"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Styles>
+        <!-- Section toggle header: dark flat bar, no blue highlight -->
+        <Style Selector="ToggleButton.sectionHeader">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Background" Value="#383838"/>
+            <Setter Property="Foreground" Value="#CCC"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="#2A2A2A"/>
+        </Style>
+        <Style Selector="ToggleButton.sectionHeader:pointerover">
+            <Setter Property="Background" Value="#444"/>
+        </Style>
+        <Style Selector="ToggleButton.sectionHeader:checked">
+            <Setter Property="Background" Value="#383838"/>
+        </Style>
+        <Style Selector="ToggleButton.sectionHeader:pressed">
+            <Setter Property="Background" Value="#404040"/>
+        </Style>
+
+        <!-- Panel-scoped compact controls -->
+        <Style Selector="Border.propsPanel Slider">
+            <Setter Property="MinHeight" Value="16"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+        </Style>
+        <Style Selector="Border.propsPanel Slider /template/ Thumb">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+        </Style>
+        <Style Selector="Border.propsPanel TextBox">
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="Border.propsPanel ComboBox">
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Padding" Value="6,2"/>
+        </Style>
+        <Style Selector="Border.propsPanel CheckBox">
+            <Setter Property="MinHeight" Value="22"/>
+            <Setter Property="Padding" Value="4,0"/>
+        </Style>
+    </Window.Styles>
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}"/>
+        <!-- Delete is dispatched in code-behind so it can batch-delete a multi-prop selection
+             when present, and fall back to single marker delete otherwise. -->
+    </Window.KeyBindings>
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New Map..." Click="OnNewMap"/>
+                <MenuItem Header="_Open..." Click="OnOpenMap"/>
+                <Separator/>
+                <MenuItem Header="_Save" Click="OnSaveMap" IsEnabled="{Binding HasMap}"/>
+                <MenuItem Header="Save _As..." Click="OnSaveMapAs" IsEnabled="{Binding HasMap}"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="OnExit"/>
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Undo" Click="OnUndo" InputGesture="Ctrl+Z"/>
+                <MenuItem Header="_Redo" Click="OnRedo" InputGesture="Ctrl+Y"/>
+                <Separator/>
+                <MenuItem Header="_Clamp props/markers to ground" Click="OnClampToGround" IsEnabled="{Binding HasMap}"/>
+                <!-- Rename map and Scale map moved to the "Map Info" tab -->
+            </MenuItem>
+            <MenuItem Header="_Generate">
+                <MenuItem Header="Procedural _map…" Click="OnGenerateMap"/>
+            </MenuItem>
+            <MenuItem Header="_Settings">
+                <MenuItem Header="Set _game folder…" Click="OnSetGameFolder"/>
+                <MenuItem Header="_Diagnostics…" Click="OnDiagnostics"/>
+            </MenuItem>
+        </Menu>
+
+        <Border DockPanel.Dock="Bottom" Background="#1E1E1E" Padding="8,3">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="#999"/>
+        </Border>
+
+        <!-- Side panel removed: all map editing now lives in the bottom palettes of the 3D / 2D
+             tabs, and map-level info / scale moved to the dedicated "Map Info" tab below. -->
+        <!-- 3D viewport lives ALONGSIDE the TabControl (overlay grid cell) rather than inside
+             the 3D TabItem. This way it stays in the visual tree even when another tab is
+             active, so OnOpenGlRender keeps firing on demand — needed to refresh the 2D / Symétrie
+             snapshot after edits made off-tab. When the user is not on the 3D tab the control is
+             shoved offscreen via a negative Margin so GL pixels (which render above compositing
+             and would otherwise sit over the active tab) are out of view. -->
+        <Grid>
+                <TabControl TabStripPlacement="Bottom"
+                            x:Name="ViewportTabs" SelectionChanged="OnViewportTabChanged">
+                <TabItem Header="3D View">
+                    <DockPanel>
+                        <!-- Top toolbar: terrain brush radius + strength sliders + Smart toggle. -->
+                        <Border DockPanel.Dock="Top" Background="#202024" Padding="6,4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <TextBlock Text="Radius:" VerticalAlignment="Center" Foreground="#CCC"/>
+                                <Slider Width="140" Minimum="1" Maximum="100" Value="{Binding BrushRadius}"/>
+                                <TextBlock Text="{Binding BrushRadius, StringFormat=F0}" Width="22" VerticalAlignment="Center" Foreground="#AAA"/>
+                                <TextBlock Text="Strength:" VerticalAlignment="Center" Foreground="#CCC"/>
+                                <Slider Width="140" Minimum="1" Maximum="100" Value="{Binding BrushStrength}"/>
+                                <TextBlock Text="{Binding BrushStrength, StringFormat=F0}" Width="22" VerticalAlignment="Center" Foreground="#AAA"/>
+                                <Border Background="#3A3A3F" Width="1" Margin="6,0"/>
+                                <ToggleButton Content="Smart" IsChecked="{Binding IsSmartTexturingEnabled}" Padding="10,4"
+                                              ToolTip.Tip="When ON, every terrain stroke also paints the matching texture (sand near sea, rock on slopes, snow on peaks…). Missing categories are auto-added from the texture library if the map has free strata slots."/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Bottom palette: two-level (category → tool), mirrors the 2D bottom
+                             palette. Level 1 = Terrain / Textures, level 2 = brush modes or strata. -->
+                        <Border DockPanel.Dock="Bottom" Background="#1A1A1D" BorderBrush="#2D2D30" BorderThickness="0,1,0,0">
+                            <StackPanel>
+                                <!-- Level 1: categories. Card icon comes from the category's first tool. -->
+                                <ScrollViewer Height="106" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,2,2,4">
+                                    <ListBox Classes="propMenu"
+                                             ItemsSource="{Binding Viewport3DCategories}"
+                                             SelectedItem="{Binding SelectedViewport3DCategory}">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2"/></ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel HorizontalAlignment="Center" Width="86" Height="78">
+                                                    <Image Source="{Binding Tools[0].Icon}" Width="56" Height="56" Margin="0,2,0,0"
+                                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                                    <TextBlock Text="{Binding Name}" FontSize="10" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </ScrollViewer>
+                                <!-- Level 2: tools of the selected category. -->
+                                <ScrollViewer Height="128" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,2,2,4">
+                                    <ListBox Classes="propMenu"
+                                             ItemsSource="{Binding ToolsInSelected3DCategory}"
+                                             SelectedItem="{Binding SelectedViewport3DTool}">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2"/></ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel HorizontalAlignment="Center" Width="86" Height="100">
+                                                    <Image Source="{Binding Icon}" Width="72" Height="72" Margin="0,2,0,0"
+                                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                                    <TextBlock Text="{Binding Label}" FontSize="9" HorizontalAlignment="Center"
+                                                               Foreground="#AAA" TextTrimming="CharacterEllipsis" MaxWidth="82"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Placeholder that the GL viewport overlay tracks: its actual bounds inside
+                             the parent Grid drive GlViewport.Margin so the GL render area exactly
+                             matches the 3D tab content area (no clipping by the toolbars). -->
+                        <Border x:Name="GlPlaceholder"/>
+                    </DockPanel>
+                </TabItem>
+                <TabItem Header="2D View">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Background="#202024" Padding="6,4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <CheckBox Content="Grid" IsChecked="{Binding ShowGrid}"/>
+                                <CheckBox Content="Diagonals" IsChecked="{Binding ShowDiagonalGrid}"/>
+                                <CheckBox Content="Snap" IsChecked="{Binding SnapToGrid}"/>
+                                <TextBlock Text="Step:" VerticalAlignment="Center"/>
+                                <ComboBox SelectedItem="{Binding GridStep}" Width="80">
+                                    <x:Int32>8</x:Int32>
+                                    <x:Int32>16</x:Int32>
+                                    <x:Int32>32</x:Int32>
+                                    <x:Int32>64</x:Int32>
+                                    <x:Int32>128</x:Int32>
+                                </ComboBox>
+                                <Border Background="#3A3A3F" Width="1"/>
+                                <ToggleButton Content="Brush mode" IsChecked="{Binding IsPropBrushActive}"
+                                              ToolTip.Tip="Active: place several props per click (radius/density). Inactive: place 1 prop per click."/>
+                                <TextBlock Text="Size:" VerticalAlignment="Center"/>
+                                <Slider Width="100" Minimum="2" Maximum="40" Value="{Binding PropBrushRadius}"/>
+                                <TextBlock Text="{Binding PropBrushRadius, StringFormat=F0}" Width="22" VerticalAlignment="Center"/>
+                                <TextBlock Text="Density:" VerticalAlignment="Center"/>
+                                <Slider Width="80" Minimum="1" Maximum="20" Value="{Binding PropBrushDensity}"/>
+                                <TextBlock Text="{Binding PropBrushDensity, StringFormat=F0}" Width="22" VerticalAlignment="Center"/>
+                                <TextBlock Text="(Shift+drag = box-select, Delete = remove)" Foreground="#888" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ============= Prop menu (bottom of 2D view) =============
+                             Two horizontal ListBoxes: category picker + items of selected category.
+                             Selection is gold-bordered via the ListBoxItem:selected style. -->
+                        <Border DockPanel.Dock="Bottom" Background="#1A1A1D" BorderBrush="#2D2D30" BorderThickness="0,1,0,0">
+                            <Border.Styles>
+                                <!-- Reset the default ListBoxItem styling so our DataTemplate (Button-like card)
+                                     is the only visible chrome. Then add a gold ring when selected. -->
+                                <Style Selector="ListBox.propMenu">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                </Style>
+                                <Style Selector="ListBox.propMenu ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="1"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+                                <Style Selector="ListBox.propMenu ListBoxItem /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderBrush" Value="#444"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="CornerRadius" Value="2"/>
+                                </Style>
+                                <Style Selector="ListBox.propMenu ListBoxItem:selected /template/ ContentPresenter">
+                                    <Setter Property="BorderBrush" Value="#F4C430"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                </Style>
+                                <Style Selector="ListBox.propMenu ListBoxItem:pointerover /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="#2A2A2E"/>
+                                </Style>
+                            </Border.Styles>
+                            <StackPanel>
+                                <!-- Level 1: categories -->
+                                <!-- Heights tuned to fit card + ListBox margins + scrollbar gutter (~18px). -->
+                                <ScrollViewer Height="106" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,2,2,4">
+                                    <ListBox Classes="propMenu"
+                                             ItemsSource="{Binding PropCategories}"
+                                             SelectedItem="{Binding SelectedPropCategory}">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2"/></ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel HorizontalAlignment="Center" Width="86" Height="78">
+                                                    <Image Source="{Binding Items[0].Icon}" Width="56" Height="56" Margin="0,2,0,0"
+                                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                                    <TextBlock Text="{Binding Name}" FontSize="10" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </ScrollViewer>
+                                <!-- Level 2: items in the selected category. -->
+                                <ScrollViewer Height="128" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,2,2,4">
+                                    <ListBox Classes="propMenu"
+                                             ItemsSource="{Binding ItemsInSelectedCategory}"
+                                             SelectedItem="{Binding SelectedPropEntry}">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2"/></ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel HorizontalAlignment="Center" Width="86" Height="100"
+                                                            ToolTip.Tip="{Binding BlueprintPath}">
+                                                    <Image Source="{Binding Icon}" Width="72" Height="72" Margin="0,2,0,0"
+                                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="9" HorizontalAlignment="Center"
+                                                               Foreground="#AAA" TextTrimming="CharacterEllipsis" MaxWidth="82"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+                        <Panel>
+                            <controls:SkiaMapControl x:Name="SkiaViewport"
+                                                     Map="{Binding CurrentMap}"
+                                                     IsPropBrushActive="{Binding IsBrushEffectivelyActive}"
+                                                     IsSinglePlaceActive="{Binding IsSinglePlaceActive}"
+                                                     PropBrushRadius="{Binding PropBrushRadius}"
+                                                     ShowGrid="{Binding ShowGrid}"
+                                                     ShowDiagonalGrid="{Binding ShowDiagonalGrid}"
+                                                     GridStep="{Binding GridStep}"
+                                                     SnapToGrid="{Binding SnapToGrid}"/>
+                            <!-- Mass amount overlay: small floating panel in the bottom-right of the
+                                 2D view, visible only when a Mass marker is selected. Adjusts the
+                                 mass deposit amount (in-game extractor yield). -->
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                    Margin="0,0,16,16" Padding="8,6"
+                                    Background="#D0202024" BorderBrush="#555" BorderThickness="1"
+                                    CornerRadius="3"
+                                    IsVisible="{Binding IsMassMarkerSelected}">
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Text="Mass amount" Foreground="#DDD" FontSize="11" VerticalAlignment="Center"/>
+                                    <Slider Width="140" Minimum="0" Maximum="300" Value="{Binding SelectedMarkerAmount}"
+                                            VerticalAlignment="Center"/>
+                                    <TextBox Width="50" FontSize="11" VerticalAlignment="Center"
+                                             Text="{Binding SelectedMarkerAmount, StringFormat='{}{0:F0}'}"/>
+                                </StackPanel>
+                            </Border>
+                            <!-- Hover popup: tracks the pointer, shows the icon + name of the prop under
+                                 the cursor in the 2D view. Driven by SkiaMapControl.HoveredProp. -->
+                            <Popup IsOpen="{Binding #SkiaViewport.HasHoveredProp}"
+                                   Placement="Pointer"
+                                   PlacementTarget="{Binding #SkiaViewport}"
+                                   IsHitTestVisible="False"
+                                   HorizontalOffset="14" VerticalOffset="14">
+                                <Border Background="#202024" BorderBrush="#666" BorderThickness="1" Padding="4" CornerRadius="2">
+                                    <StackPanel HorizontalAlignment="Center" Spacing="2">
+                                        <Image Source="{Binding #SkiaViewport.HoveredPropIcon}" Width="64" Height="64"
+                                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                                               IsVisible="{Binding #SkiaViewport.HoveredPropIcon, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                        <TextBlock Text="{Binding #SkiaViewport.HoveredPropName}" FontSize="11"
+                                                   Foreground="#DDD" HorizontalAlignment="Center" MaxWidth="120"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Border>
+                            </Popup>
+                        </Panel>
+                    </DockPanel>
+                </TabItem>
+                <TabItem Header="Symmetry">
+                    <ScrollViewer>
+                        <StackPanel Margin="12" Spacing="14">
+                            <TextBlock Text="Mirror ×1" FontWeight="Bold" Foreground="#DDD"/>
+                            <TextBlock Text="Click the half you want to keep — it will be mirrored to the other side."
+                                       Foreground="#999" FontSize="11"/>
+                            <UniformGrid Rows="1" Columns="4" Margin="0,4,0,0">
+                                <Border Margin="4" BorderBrush="#444" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="Vertical" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                        <controls:SymmetryThumbnail x:Name="ThumbV"
+                                            Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Height="180"/>
+                                    </DockPanel>
+                                </Border>
+                                <Border Margin="4" BorderBrush="#444" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="Horizontal" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                        <controls:SymmetryThumbnail x:Name="ThumbH"
+                                            Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Height="180"/>
+                                    </DockPanel>
+                                </Border>
+                                <Border Margin="4" BorderBrush="#444" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="Diagonal ↘" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                        <controls:SymmetryThumbnail x:Name="ThumbD1"
+                                            Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Height="180"/>
+                                    </DockPanel>
+                                </Border>
+                                <Border Margin="4" BorderBrush="#444" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="Diagonal ↙" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                        <controls:SymmetryThumbnail x:Name="ThumbD2"
+                                            Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Height="180"/>
+                                    </DockPanel>
+                                </Border>
+                            </UniformGrid>
+
+                            <TextBlock Text="Mirror ×3 (4-fold)" FontWeight="Bold" Foreground="#DDD" Margin="0,12,0,0"/>
+                            <TextBlock Text="Click the quarter/triangle you want to keep — it will be mirrored into the three others."
+                                       Foreground="#999" FontSize="11"/>
+                            <UniformGrid Rows="1" Columns="2" Margin="0,4,0,0">
+                                <Border Margin="4" BorderBrush="#444" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="Cross +" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                        <controls:SymmetryThumbnail x:Name="ThumbCross"
+                                            Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Height="220"/>
+                                    </DockPanel>
+                                </Border>
+                                <Border Margin="4" BorderBrush="#444" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="Cross ×" HorizontalAlignment="Center" Foreground="#CCC"/>
+                                        <controls:SymmetryThumbnail x:Name="ThumbDiag"
+                                            Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Height="220"/>
+                                    </DockPanel>
+                                </Border>
+                            </UniformGrid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Map Info tab — reclaims the (now removed) left sidebar. Holds the in-game
+                     display name + description, folder rename, map size resampling, and stats. -->
+                <TabItem Header="Map Info">
+                    <ScrollViewer IsEnabled="{Binding HasMap}">
+                        <StackPanel Margin="20" Spacing="18" MaxWidth="640" HorizontalAlignment="Left">
+
+                            <!-- Name + description -->
+                            <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="14">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Name &amp; description" FontWeight="Bold" Foreground="#DDD"/>
+                                    <TextBlock Text="In-game lobby name and description. Stored in scenario.lua." Foreground="#999" FontSize="11"/>
+                                    <TextBlock Text="Name" Foreground="#AAA" FontSize="11" Margin="0,6,0,0"/>
+                                    <TextBox Text="{Binding MapName}" FontSize="13"/>
+                                    <TextBlock Text="Description" Foreground="#AAA" FontSize="11" Margin="0,4,0,0"/>
+                                    <TextBox Text="{Binding MapDescription}" FontSize="12"
+                                             TextWrapping="Wrap" AcceptsReturn="True" Height="80"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Rename folder on disk -->
+                            <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="14">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Rename folder" FontWeight="Bold" Foreground="#DDD"/>
+                                    <TextBlock Text="Rename the on-disk folder AND in-map display name in one step. The four companion files keep their existing base names." Foreground="#999" FontSize="11" TextWrapping="Wrap"/>
+                                    <Button Content="Rename map…" Click="OnRenameMap" Padding="14,6" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Map size resampling -->
+                            <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="14">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Map size" FontWeight="Bold" Foreground="#DDD"/>
+                                    <TextBlock Foreground="#999" FontSize="11" TextWrapping="Wrap"
+                                               Text="Heightmap and splatmaps are resampled; marker / decal / prop positions are scaled proportionally. The size also caps the in-game player slot count (256→2, 512→4, 1024→6, 2048+→8). Undoable."/>
+                                    <!-- WrapPanel + auto-size: each radio is as wide as its text,
+                                         WrapPanel wraps to a new row if total width exceeds the cadre. -->
+                                    <WrapPanel Margin="0,4,0,0">
+                                        <RadioButton x:Name="Size256"  GroupName="MapSize" Content="5×5 km (256)"    Tag="256"  Click="OnScaleClick" Margin="0,0,12,6"/>
+                                        <RadioButton x:Name="Size512"  GroupName="MapSize" Content="10×10 km (512)"  Tag="512"  Click="OnScaleClick" Margin="0,0,12,6"/>
+                                        <RadioButton x:Name="Size1024" GroupName="MapSize" Content="20×20 km (1024)" Tag="1024" Click="OnScaleClick" Margin="0,0,12,6"/>
+                                        <RadioButton x:Name="Size2048" GroupName="MapSize" Content="40×40 km (2048)" Tag="2048" Click="OnScaleClick" Margin="0,0,12,6"/>
+                                        <RadioButton x:Name="Size4096" GroupName="MapSize" Content="80×80 km (4096)" Tag="4096" Click="OnScaleClick" Margin="0,0,12,6"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Stats (read-only) -->
+                            <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="14">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Stats" FontWeight="Bold" Foreground="#DDD"/>
+                                    <TextBlock Foreground="#BBB" FontSize="12">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="Heightmap: {0}×{1} | Format: v{2}">
+                                                <Binding Path="MapWidth"/><Binding Path="MapHeight"/><Binding Path="MapVersionMinor"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#BBB" FontSize="12" Text="{Binding MarkerCount, StringFormat='Markers: {0}'}"/>
+                                    <TextBlock Foreground="#BBB" FontSize="12" Text="{Binding PropCount, StringFormat='Props: {0}'}"/>
+                                    <TextBlock Foreground="#777" FontSize="11" Margin="0,6,0,0"
+                                               IsVisible="{Binding HasMap, Converter={x:Static BoolConverters.Not}}"
+                                               Text="Open or create a map to enable editing."/>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                </TabControl>
+
+                <!-- GL viewport overlay. Starts offscreen (no map loaded) — the code-behind moves
+                     it on-screen via Margin once HasMap=true AND the user is on the 3D tab. GL
+                     cannot use IsVisible=false (kills the render loop), hence the negative-Margin
+                     trick. -->
+                <controls:OpenGlMapControl x:Name="GlViewport" Map="{Binding CurrentMap}"
+                                           Margin="-100000,-100000,100000,100000"/>
+
+            <!-- Welcome screen overlay : drawn LAST so it sits on top of the editor content (and
+                 the GL viewport, which is parked offscreen when no map). Three big vertical cards
+                 for New / Open / Generate. The solid Background swallows clicks so nothing leaks
+                 through to the empty TabControl below. -->
+            <Border x:Name="WelcomeScreen" Background="#1A1A1F"
+                    IsVisible="{Binding HasMap, Converter={x:Static BoolConverters.Not}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+                    <TextBlock Text="Supreme Commander Map Editor"
+                               FontSize="22" FontWeight="Bold" Foreground="#EEE"
+                               HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock Text="What do you want to do?"
+                               FontSize="13" Foreground="#888"
+                               HorizontalAlignment="Center" Margin="0,0,0,24"/>
+                    <StackPanel Orientation="Horizontal" Spacing="28" HorizontalAlignment="Center">
+                        <Button Width="200" Height="280" Click="OnNewMap"
+                                Background="#2A2A30" BorderBrush="#3A3A40" BorderThickness="1"
+                                Padding="16" Cursor="Hand">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                                <TextBlock Text="📄" FontSize="80" HorizontalAlignment="Center"/>
+                                <TextBlock Text="New map" FontSize="17" FontWeight="Bold"
+                                           Foreground="#EEE" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Start from a blank canvas (256×256, 2 players)"
+                                           FontSize="11" Foreground="#999" TextWrapping="Wrap"
+                                           HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="160"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="200" Height="280" Click="OnOpenMap"
+                                Background="#2A2A30" BorderBrush="#3A3A40" BorderThickness="1"
+                                Padding="16" Cursor="Hand">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                                <TextBlock Text="📂" FontSize="80" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Open map" FontSize="17" FontWeight="Bold"
+                                           Foreground="#EEE" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Load an existing .scmap from disk"
+                                           FontSize="11" Foreground="#999" TextWrapping="Wrap"
+                                           HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="160"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="200" Height="280" Click="OnGenerateMap"
+                                Background="#2A4060" BorderBrush="#4A6080" BorderThickness="1"
+                                Padding="16" Cursor="Hand">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                                <TextBlock Text="✨" FontSize="80" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Generate map" FontSize="17" FontWeight="Bold"
+                                           Foreground="#FFF" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Procedural generator — pick a seed, biome and team setup"
+                                           FontSize="11" Foreground="#CCC" TextWrapping="Wrap"
+                                           HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="160"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

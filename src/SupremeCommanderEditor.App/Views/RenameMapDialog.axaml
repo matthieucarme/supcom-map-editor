@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SupremeCommanderEditor.App.Views.RenameMapDialog"
+        Title="Rename map"
+        Width="440" Height="160"
+        WindowStartupLocation="CenterOwner"
+        Background="#1E1E1E"
+        CanResize="False">
+    <DockPanel Margin="14">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,10,0,0">
+            <Button Content="Cancel" Click="OnCancel"/>
+            <Button Content="Rename" Click="OnOk" IsDefault="True"/>
+        </StackPanel>
+        <StackPanel Spacing="6">
+            <TextBlock Text="New map name (also renames the folder on disk)" Foreground="#AAA" FontSize="11"/>
+            <TextBox x:Name="NameBox" FontSize="13"/>
+            <TextBlock x:Name="HintText" Foreground="#888" FontSize="10"/>
+        </StackPanel>
+    </DockPanel>
+</Window>

@@ -1,0 +1,129 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SupremeCommanderEditor.App.Views.MapGeneratorDialog"
+        Width="560" Height="640"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#1E1E22"
+        Title="Generate map">
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top" FontWeight="Bold" FontSize="15" Foreground="#EEE" Margin="0,0,0,12"
+                   Text="Procedural map generator"/>
+
+        <Border DockPanel.Dock="Bottom" Margin="0,14,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel" Click="OnCancel" Padding="16,6" FontSize="12"/>
+                <Button Content="Generate" Click="OnGenerate" Padding="22,6" FontSize="12"
+                        Background="#3060A0" Foreground="White" FontWeight="Bold"/>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer>
+            <StackPanel Spacing="14">
+
+                <!-- === Seed === -->
+                <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Seed" FontWeight="Bold" Foreground="#DDD"/>
+                        <TextBlock Text="Same seed + same options = same map. Useful for reproducing or sharing a generation." Foreground="#999" FontSize="11" TextWrapping="Wrap"/>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                            <TextBox x:Name="SeedBox" Text="42" FontSize="13"/>
+                            <Button Grid.Column="1" Content="🎲 Random" Click="OnRandomizeSeed" Margin="6,0,0,0" Padding="10,4" FontSize="11"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- === Teams === -->
+                <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Teams" FontWeight="Bold" Foreground="#DDD"/>
+                        <TextBlock Text="Pick a preset, or use Custom to set the number of teams manually. Each team shows up below with its own player count and mass-per-player spinner." Foreground="#999" FontSize="11" TextWrapping="Wrap"/>
+                        <WrapPanel Margin="0,4,0,0">
+                            <RadioButton x:Name="V1v1"   GroupName="Versus" Content="1v1"      Tag="1,1"               Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V2v2"   GroupName="Versus" Content="2v2"      Tag="2,2"               Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V3v3"   GroupName="Versus" Content="3v3"      Tag="3,3"               Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V4v4"   GroupName="Versus" Content="4v4"      Tag="4,4"               Click="OnVersusPreset" Margin="0,0,8,4" IsChecked="True"/>
+                            <RadioButton x:Name="V1v7"   GroupName="Versus" Content="1v7"      Tag="1,7"               Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V2v6"   GroupName="Versus" Content="2v6"      Tag="2,6"               Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V3v5"   GroupName="Versus" Content="3v5"      Tag="3,5"               Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V3w"    GroupName="Versus" Content="3-way 1×3"  Tag="1,1,1"           Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V4w"    GroupName="Versus" Content="4-way 1×4"  Tag="1,1,1,1"         Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V4w2"   GroupName="Versus" Content="4-way 2×4"  Tag="2,2,2,2"         Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="V8ffa"  GroupName="Versus" Content="8-FFA"     Tag="1,1,1,1,1,1,1,1"  Click="OnVersusPreset" Margin="0,0,8,4"/>
+                            <RadioButton x:Name="VCustom" GroupName="Versus" Content="Custom"   Click="OnVersusPreset" Margin="0,0,8,4"/>
+                        </WrapPanel>
+                        <StackPanel x:Name="CustomTeamCountPanel" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0" IsVisible="False">
+                            <TextBlock Text="Number of teams:" Foreground="#AAA" VerticalAlignment="Center"/>
+                            <NumericUpDown x:Name="TeamCountBox" Value="2" Minimum="1" Maximum="8" Increment="1" Width="100" ValueChanged="OnTeamCountChanged"/>
+                        </StackPanel>
+                        <Grid x:Name="TeamsGrid" Margin="0,8,0,0" RowSpacing="4" ColumnSpacing="6"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- === Size + Water + Biome === -->
+                <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Map" FontWeight="Bold" Foreground="#DDD"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Size:" Foreground="#AAA" VerticalAlignment="Center" Width="60"/>
+                            <ComboBox x:Name="SizeBox" SelectedIndex="1" Width="140">
+                                <ComboBoxItem Tag="256" Content="5×5 km (256)"/>
+                                <ComboBoxItem Tag="512" Content="10×10 km (512)"/>
+                                <ComboBoxItem Tag="1024" Content="20×20 km (1024)"/>
+                                <ComboBoxItem Tag="2048" Content="40×40 km (2048)"/>
+                                <ComboBoxItem Tag="4096" Content="80×80 km (4096)"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Water:" Foreground="#AAA" VerticalAlignment="Center" Width="60"/>
+                            <CheckBox x:Name="WaterBox" IsChecked="True" Content="Include water plane"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Biome:" Foreground="#AAA" VerticalAlignment="Center" Width="60"/>
+                            <ComboBox x:Name="BiomeBox" SelectedIndex="0" Width="200" SelectionChanged="OnBiomeChanged">
+                                <ComboBoxItem Tag="evergreen2" Content="Evergreen 2 (forest)"/>
+                                <ComboBoxItem Tag="evergreen"  Content="Evergreen (vanilla)"/>
+                                <ComboBoxItem Tag="tundra"     Content="Tundra (frozen)"/>
+                                <ComboBoxItem Tag="redrocks"   Content="Redrocks (arid)"/>
+                                <ComboBoxItem Tag="desert"     Content="Desert"/>
+                                <ComboBoxItem Tag="swamp"      Content="Swamp"/>
+                                <ComboBoxItem Tag="lava"       Content="Lava"/>
+                                <ComboBoxItem Tag="paradise"   Content="Paradise (tropical)"/>
+                                <ComboBoxItem Tag="crystal"    Content="Crystal (alien)"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- === Texture set preview === -->
+                <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Texture set" FontWeight="Bold" Foreground="#DDD"/>
+                        <TextBlock Text="One vanilla texture per smart category, picked from the chosen biome (fallback to any biome if the requested one doesn't cover a category)."
+                                   Foreground="#999" FontSize="11" TextWrapping="Wrap"/>
+                        <WrapPanel x:Name="TexturePreviews" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- === Symmetry === -->
+                <Border Background="#26262A" BorderBrush="#383840" BorderThickness="1" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Symmetry" FontWeight="Bold" Foreground="#DDD"/>
+                        <TextBlock Text="Apply a mirror pattern after generation. Recommended for balanced versus modes (1v1, 2v2, 3v3, 4v4)." Foreground="#999" FontSize="11" TextWrapping="Wrap"/>
+                        <ComboBox x:Name="SymmetryBox" SelectedIndex="0" Width="240" Margin="0,4,0,0">
+                            <ComboBoxItem Tag="" Content="None"/>
+                            <ComboBoxItem Tag="Vertical"     Content="Vertical (left ↔ right)"/>
+                            <ComboBoxItem Tag="Horizontal"   Content="Horizontal (top ↔ bottom)"/>
+                            <ComboBoxItem Tag="DiagonalTLBR" Content="Diagonal ↘"/>
+                            <ComboBoxItem Tag="DiagonalTRBL" Content="Diagonal ↙"/>
+                            <ComboBoxItem Tag="QuadCross"    Content="Quad +"/>
+                            <ComboBoxItem Tag="QuadDiagonals" Content="Quad ×"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

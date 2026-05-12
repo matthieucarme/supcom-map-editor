@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline icon generator. Run once when SC blueprints change (rare). Outputs go to
+       ../../src/SupremeCommanderEditor.Rendering/PropIcons/ and are checked into the repo
+       so they're available on every machine (and embedded in the app at compile time). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <RootNamespace>SupremeCommanderEditor.Tools.IconGenerator</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.8"/>
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.8"/>
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="2.88.8"/>
+    <PackageReference Include="Pfim" Version="0.11.2"/>
+  </ItemGroup>
+</Project>

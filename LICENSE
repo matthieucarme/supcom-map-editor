@@ -1,0 +1,35 @@
+MIT License
+
+Copyright (c) 2026 Supreme Commander Map Editor contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This editor is a fan project not affiliated with, endorsed, sponsored, or
+specifically approved by Square Enix, Gas Powered Games, or any other rights
+holder of Supreme Commander or Supreme Commander: Forged Alliance.
+
+Supreme Commander and Supreme Commander: Forged Alliance are trademarks of
+their respective owners. The repository contains references to vanilla game
+asset paths and includes a small number of derivative resources (icons rendered
+from in-game models, sample test maps, the game icon) used purely to support
+editing functionality. Users must own a legitimate copy of Supreme Commander
+or Supreme Commander: Forged Alliance to use this editor with full
+functionality.

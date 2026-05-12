@@ -1,0 +1,34 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Publish artifacts
+**/publish/
+*.zip
+
+# IDE / editor
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET
+*.pdb
+
+# Avalonia generated
+**/obj/**/Avalonia/**
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (may contain machine-specific permissions)
+.claude/settings.local.json
+
+# Personal scratch
+/tmp/
+*.tmp
+*.bak
