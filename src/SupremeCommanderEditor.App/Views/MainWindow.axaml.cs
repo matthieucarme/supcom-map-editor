@@ -756,11 +756,12 @@ private async void OnRenameMap(object? sender, RoutedEventArgs e)
 
         var choices = new List<TextureReplaceDialog.StrataChoice>();
         // The base layer (strata 0) is the always-visible substrate beneath every splatmap blend,
-        // and the macro slot (last index in v53, fixed index 9 in v56+) is the alpha-blended
-        // overlay on top of everything. Both must be replaceable here too — otherwise users see
-        // patches of the original base bleed through after "changing all the textures".
+        // and the macro slot (always 9 since MapStrataNormalizer expands every loaded map to 10
+        // slots) is the alpha-blended overlay on top of everything. Both must be replaceable
+        // here too — otherwise users see patches of the original base bleed through after
+        // "changing all the textures".
         int totalSlots = map.TerrainTextures.Length;
-        int macroSlot = totalSlots <= 6 ? totalSlots - 1 : 9;
+        const int macroSlot = Core.Services.MapStrataNormalizer.MacroSlot;
         void AddChoice(int strata, string title)
         {
             if (strata < 0 || strata >= totalSlots) return;

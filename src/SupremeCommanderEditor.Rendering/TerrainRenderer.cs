@@ -62,9 +62,10 @@ public class TerrainRenderer : IDisposable
         // Detect shader type for half-range transform
         _terrainShaderType = map.TerrainShader.Contains("XP") || map.TerrainShader.Contains("250") ? 1 : 0;
 
-        // For v53 maps with ≤6 layers, last layer is upper/macro (self-alpha blend)
-        // Tell the shader which layer index is the "upper" layer
-        _upperLayerIndex = (_stratumCount <= 6 && _stratumCount > 1) ? _stratumCount - 1 : 9;
+        // All maps reach this renderer normalised to 10 slots (MapStrataNormalizer.EnsureTenSlots
+        // runs at load time and the generator always produces 10), so the macro overlay is always
+        // at slot 9.
+        _upperLayerIndex = 9;
 
         // Upload splatmaps
         if (map.TextureMaskLow.DdsData.Length > 128 && map.TextureMaskLow.Width > 0)

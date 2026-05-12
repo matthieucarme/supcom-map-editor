@@ -185,6 +185,11 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var map = ScmapReader.Read(scmapPath);
+            // Bring every loaded map up to the canonical 10-strata layout (base + 8 splatmap-paintable
+            // + macro at slot 9). Vanilla v53 maps often ship with only 6 slots, which would cap the
+            // paint workflow at 4 layers — expansion is purely additive (existing slots and macro
+            // position-in-array preserved by index 0..N-2 → 0..N-2, last → 9).
+            Core.Services.MapStrataNormalizer.EnsureTenSlots(map);
             var dir = Path.GetDirectoryName(scmapPath)!;
             var baseName = Path.GetFileNameWithoutExtension(scmapPath);
 
@@ -883,17 +888,14 @@ public partial class MainWindowViewModel : ObservableObject
     public event Action<Services.WaterSetting>? WaterSettingActivated;
 
     /// <summary>
-    /// Highest strata index that can be painted into the splatmap on this map. v53 maps reserve
-    /// the last strata as the macro/upper layer (not blendable), so for an N-strata v53 map only
-    /// 1..N-2 are paintable. v56+ caps at 8 regardless.
+    /// Highest strata index that can be painted into the splatmap on this map. All loaded maps
+    /// are normalised to the 10-slot layout (slot 0 = base, slots 1..8 splatmap-paintable, slot 9
+    /// = macro), so this always returns 8 once a map is open.
     /// </summary>
     public int MaxPaintableStrata()
     {
         if (CurrentMap == null) return 0;
-        int len = CurrentMap.TerrainTextures.Length;
-        // v53 macro convention: stratumCount ≤ 6 → last is upper/macro. v56+ uses 10 strata.
-        if (len <= 6 && len > 1) return Math.Min(8, len - 2);
-        return Math.Min(8, len - 1);
+        return Math.Min(8, CurrentMap.TerrainTextures.Length - 1);
     }
 
     /// <summary>Force the palette to rebuild — call after loading a map (strata changed) or after
