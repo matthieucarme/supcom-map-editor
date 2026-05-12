@@ -1,3 +1,4 @@
+using SupremeCommanderEditor.Core.Formats.Scmap;
 using SupremeCommanderEditor.Core.Models;
 
 namespace SupremeCommanderEditor.Core.Services;
@@ -51,6 +52,21 @@ public static class MapStrataNormalizer
         // but our normalised renderer blends slot 5..8 via mask1 — so we must clear that data,
         // otherwise the now-empty slot renders as magenta wherever the channel was non-zero.
         ClearMaskChannelsForSlots(map, oldLen - 1, 8);
+
+        // Short v53 maps ship a degenerate "high" splatmap (1 byte per pixel, never used as a real
+        // splatmap by the SC1 engine). Once we promote them to the 10-strata layout the renderer
+        // does sample mask1 — so we replace the high mask with a fresh, blank ARGB DDS at the
+        // same dimensions. Zero everywhere = no spurious blend of empty slots 5..8.
+        if (map.TextureMaskHigh != null && map.TextureMaskHigh.Width > 0 && map.TextureMaskHigh.Height > 0)
+        {
+            int w = map.TextureMaskHigh.Width;
+            int h = map.TextureMaskHigh.Height;
+            var expectedLen = 128 + w * h * 4;
+            if (map.TextureMaskHigh.DdsData == null || map.TextureMaskHigh.DdsData.Length != expectedLen)
+            {
+                map.TextureMaskHigh.DdsData = DdsHelper.CreateArgbDds(w, h, new byte[w * h * 4]);
+            }
+        }
     }
 
     private static void ClearMaskChannelsForSlots(ScMap map, int fromSlot, int toSlot)
