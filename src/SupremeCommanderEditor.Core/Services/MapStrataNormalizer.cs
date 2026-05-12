@@ -12,8 +12,12 @@ namespace SupremeCommanderEditor.Core.Services;
 /// </summary>
 public static class MapStrataNormalizer
 {
-    public const int TargetSlotCount = 10;
-    public const int MacroSlot = 9;
+    /// <summary>SC1 vanilla v53 maps ship with 6 strata slots (base + 4 splatmap-blended + macro).
+    /// We pad shorter v53 arrays up to this size, but never beyond — going to 10 (FA layout)
+    /// makes vanilla SC1 crash on map load.</summary>
+    public const int VanillaV53SlotCount = 6;
+    /// <summary>v56+ canonical slot count (FA). Kept for the renderer's macro-slot reference.</summary>
+    public const int FaSlotCount = 10;
 
     /// <summary>
     /// Expand the TerrainTextures array to <see cref="TargetSlotCount"/> slots. If the map
@@ -22,52 +26,117 @@ public static class MapStrataNormalizer
     /// initialised empty AND the corresponding splatmap channels are zeroed so the shader
     /// doesn't render magenta where the old macro mask data still references those slots.
     /// </summary>
-    public static void EnsureTenSlots(ScMap map)
+    /// <summary>
+    /// Some maps (notably SCMP_021 v54) ship texture paths that aren't absolute — slot 0's
+    /// albedo is just <c>"snow_albedo.dds"</c> instead of <c>"/env/tundra/layers/tund_snow_albedo.dds"</c>.
+    /// SC1's engine resolves these by combining the tileset's layer directory with a tileset
+    /// prefix; we infer both from the other absolute paths in the same texture array and rewrite
+    /// the relative paths in-place. Without this fix the editor's texture cache falls back to a
+    /// magenta texture for the unresolved slot, which then bleeds through wherever the splatmap
+    /// channels are zero.
+    /// </summary>
+    public static void NormalizeRelativeTexturePaths(ScMap map)
+    {
+        if (map?.TerrainTextures == null) return;
+
+        string? commonDir = null;
+        string? commonPrefix = null;
+        foreach (var tex in map.TerrainTextures)
+        {
+            foreach (var path in new[] { tex.AlbedoPath, tex.NormalPath })
+            {
+                if (string.IsNullOrEmpty(path) || !path.StartsWith("/")) continue;
+                int lastSlash = path.LastIndexOf('/');
+                if (lastSlash < 0) continue;
+                commonDir ??= path.Substring(0, lastSlash + 1);
+                if (commonPrefix == null)
+                {
+                    var basename = path.Substring(lastSlash + 1);
+                    int u = basename.IndexOf('_');
+                    if (u > 0) commonPrefix = basename.Substring(0, u + 1);
+                }
+            }
+            if (commonDir != null && commonPrefix != null) break;
+        }
+        if (commonDir == null) return;
+
+        foreach (var tex in map.TerrainTextures)
+        {
+            tex.AlbedoPath = Fix(tex.AlbedoPath, commonDir, commonPrefix);
+            tex.NormalPath = Fix(tex.NormalPath, commonDir, commonPrefix);
+        }
+
+        static string Fix(string path, string dir, string? prefix)
+        {
+            if (string.IsNullOrEmpty(path) || path.StartsWith("/")) return path;
+            // Path doesn't have a slash → it's a bare filename. Prepend dir + prefix.
+            return dir + (prefix ?? "") + path;
+        }
+    }
+
+    /// <summary>
+    /// Pad the TerrainTextures array up to the SC1 vanilla v53 standard size of 6 slots when a
+    /// map ships with fewer (e.g. a blank generated map starts with 1). The original last slot
+    /// (the macro overlay) keeps its position as the final slot. New intermediate slots are
+    /// empty and their splatmap channels are zeroed so the renderer doesn't bleed magenta.
+    ///
+    /// We deliberately do NOT expand v53 maps beyond 6 — SC1 vanilla's engine crashes when it
+    /// encounters a 10-slot v53 map on load. v56+ maps already ship with 10 slots and pass
+    /// through unchanged.
+    /// </summary>
+    public static void EnsureVanillaSlots(ScMap map)
     {
         if (map?.TerrainTextures == null) return;
         int oldLen = map.TerrainTextures.Length;
-        if (oldLen >= TargetSlotCount) return;
 
-        var expanded = new TerrainTexture[TargetSlotCount];
-        // Slot 0 (base) and slots 1..oldLen-2 carry over identically.
-        for (int i = 0; i < oldLen - 1; i++)
-            expanded[i] = map.TerrainTextures[i];
-        // Old last slot = macro overlay → goes to slot 9.
-        if (oldLen > 0)
-            expanded[MacroSlot] = map.TerrainTextures[oldLen - 1];
-        else
-            expanded[MacroSlot] = new TerrainTexture();
-        // Fill the gap between (oldLen-1) and MacroSlot with empty entries.
-        for (int i = oldLen - 1; i < MacroSlot; i++)
-            if (i >= 0 && expanded[i] == null)
-                expanded[i] = new TerrainTexture();
-        for (int i = 0; i < TargetSlotCount; i++)
-            expanded[i] ??= new TerrainTexture();
-
-        map.TerrainTextures = expanded;
-
-        // Zero out splatmap channels for any slot that's now empty (oldLen-1 through 8). In the
-        // original short-v53 layout the slot at index N-1 was the alpha-blended macro overlay;
-        // its mask channel was rendered as junk by SC1's engine (alpha-only blend, not splatmap)
-        // but our normalised renderer blends slot 5..8 via mask1 — so we must clear that data,
-        // otherwise the now-empty slot renders as magenta wherever the channel was non-zero.
-        ClearMaskChannelsForSlots(map, oldLen - 1, 8);
-
-        // Short v53 maps ship a degenerate "high" splatmap (1 byte per pixel, never used as a real
-        // splatmap by the SC1 engine). Once we promote them to the 10-strata layout the renderer
-        // does sample mask1 — so we replace the high mask with a fresh, blank ARGB DDS at the
-        // same dimensions. Zero everywhere = no spurious blend of empty slots 5..8.
-        if (map.TextureMaskHigh != null && map.TextureMaskHigh.Width > 0 && map.TextureMaskHigh.Height > 0)
+        // v53 maps stuck at 10 slots (saved by an earlier broken version of this editor) need to
+        // be compacted back to the vanilla 6-slot layout — SC1 crashes loading 10-slot v53s.
+        if (map.VersionMinor <= 53 && oldLen > VanillaV53SlotCount)
         {
-            int w = map.TextureMaskHigh.Width;
-            int h = map.TextureMaskHigh.Height;
-            var expectedLen = 128 + w * h * 4;
-            if (map.TextureMaskHigh.DdsData == null || map.TextureMaskHigh.DdsData.Length != expectedLen)
+            // Trust the writeback only when the "extra" slots are unused: slots 5..8 empty and
+            // slot 9 carries the macro. That covers everything we've seen produced before the fix.
+            bool middleEmpty = true;
+            for (int i = 5; i <= 8 && i < oldLen; i++)
+                if (!string.IsNullOrEmpty(map.TerrainTextures[i].AlbedoPath)) { middleEmpty = false; break; }
+            if (middleEmpty)
             {
-                map.TextureMaskHigh.DdsData = DdsHelper.CreateArgbDds(w, h, new byte[w * h * 4]);
+                var compacted = new TerrainTexture[VanillaV53SlotCount];
+                for (int i = 0; i < 5; i++) compacted[i] = map.TerrainTextures[i];
+                compacted[5] = oldLen > 9 ? map.TerrainTextures[9] : new TerrainTexture();
+                for (int i = 0; i < VanillaV53SlotCount; i++) compacted[i] ??= new TerrainTexture();
+                map.TerrainTextures = compacted;
+                oldLen = VanillaV53SlotCount;
             }
         }
+
+        // Pad short v53 maps up to the vanilla 6-slot layout. v56+ maps stay at whatever count
+        // they have (typically 10).
+        int target = oldLen <= 6 ? VanillaV53SlotCount : oldLen;
+        if (oldLen < target)
+        {
+            int macroSlot = target - 1;
+            var expanded = new TerrainTexture[target];
+            for (int i = 0; i < oldLen - 1; i++)
+                expanded[i] = map.TerrainTextures[i];
+            // Old last slot = macro → goes to the new last slot.
+            expanded[macroSlot] = oldLen > 0 ? map.TerrainTextures[oldLen - 1] : new TerrainTexture();
+            for (int i = 0; i < target; i++)
+                expanded[i] ??= new TerrainTexture();
+            map.TerrainTextures = expanded;
+        }
+
+        // Zero the splatmap channel for every slot 1..8 that has no albedo, so empty slots
+        // don't render as magenta where the splatmap happens to be non-zero.
+        for (int slot = 1; slot <= 8; slot++)
+        {
+            if (slot >= map.TerrainTextures.Length) break;
+            if (!string.IsNullOrEmpty(map.TerrainTextures[slot].AlbedoPath)) continue;
+            ClearMaskChannelsForSlots(map, slot, slot);
+        }
     }
+
+    [System.Obsolete("Use EnsureVanillaSlots — expanding v53 maps to 10 slots crashes SC1 on load.")]
+    public static void EnsureTenSlots(ScMap map) => EnsureVanillaSlots(map);
 
     private static void ClearMaskChannelsForSlots(ScMap map, int fromSlot, int toSlot)
     {

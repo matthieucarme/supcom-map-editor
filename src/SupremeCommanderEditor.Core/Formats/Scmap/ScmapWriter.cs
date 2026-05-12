@@ -87,7 +87,7 @@ public static class ScmapWriter
         writer.WriteNullTerminatedString(map.BackgroundTexturePath);
         writer.WriteNullTerminatedString(map.SkyCubemapPath);
 
-        if (map.VersionMinor <= 53)
+        if (map.VersionMinor < 56)
         {
             var path = map.EnvironmentCubeMaps.Count > 0
                 ? map.EnvironmentCubeMaps[0].FilePath
@@ -273,15 +273,19 @@ public static class ScmapWriter
     {
         writer.Write(map.NormalMapWidth);
         writer.Write(map.NormalMapHeight);
-        writer.Write(1); // Normal map count
+        // Honour the original normal-map count (1 for most maps, 4 for 4096-sized vanilla maps).
+        int count = 1 + map.ExtraNormalMapDds.Count;
+        writer.Write(count);
         DdsHelper.WriteDdsBlob(writer, map.NormalMapDds);
+        foreach (var extra in map.ExtraNormalMapDds)
+            DdsHelper.WriteDdsBlob(writer, extra);
     }
 
     private static void WriteTextureMasks(BinaryWriter writer, ScMap map)
     {
-        if (map.VersionMinor <= 53)
+        if (map.VersionMinor <= 53 && map.V53MasksHaveCountPrefix)
         {
-            // v53: count prefix before each DDS blob
+            // v53 variant with count prefix before each DDS blob (e.g. SCMP_001).
             writer.Write(1);
             DdsHelper.WriteDdsBlob(writer, map.TextureMaskLow.DdsData);
             writer.Write(1);
@@ -289,7 +293,7 @@ public static class ScmapWriter
         }
         else
         {
-            // v56+: direct DDS blobs
+            // v56+ and v53 maps without count prefix (e.g. SCMP_030, SCMP_040): two DDS blobs.
             DdsHelper.WriteDdsBlob(writer, map.TextureMaskLow.DdsData);
             DdsHelper.WriteDdsBlob(writer, map.TextureMaskHigh.DdsData);
         }
@@ -301,10 +305,16 @@ public static class ScmapWriter
         {
             // v53: no water map DDS
         }
+        else if (map.V56WaterMapHasCountPrefix)
+        {
+            // v56+ variant with count prefix (SCMP_018 style).
+            writer.Write(map.WaterMapDds.Length > 0 ? 1 : 0);
+            if (map.WaterMapDds.Length > 0)
+                DdsHelper.WriteDdsBlob(writer, map.WaterMapDds);
+        }
         else
         {
-            // v56+: water map count + DDS blob
-            writer.Write(1);
+            // v56+ variant without count prefix (SCMP_029 style).
             DdsHelper.WriteDdsBlob(writer, map.WaterMapDds);
         }
 
@@ -361,6 +371,11 @@ public static class ScmapWriter
 
     private static void WriteProps(BinaryWriter writer, ScMap map)
     {
+        // 4096-sized vanilla maps embed an undocumented blob between watermaps and props.
+        // Reader captured those bytes verbatim — write them back unchanged for round-trip parity.
+        if (map.PostWatermapsExtra is { Length: > 0 })
+            writer.Write(map.PostWatermapsExtra);
+
         writer.Write(map.Props.Count);
 
         foreach (var prop in map.Props)

@@ -45,17 +45,17 @@ public class MapGenerationOptions
 /// </summary>
 public static class MapGenerator
 {
-    // Strata 0 is the always-visible base layer; we put Grass there so any unpainted splatmap
-    // pixel naturally shows grass instead of the magenta fallback. The 6 other smart categories
-    // take strata 1..6 (mask0 r/g/b/a + mask1 r/g).
+    // SC1 vanilla v53 layout: 6 strata total = base(0) + 4 splatmap-blended (1..4) + macro(5).
+    // We don't write a 10-slot v53 because SC1's engine crashes loading those. So we pick the
+    // 4 most useful smart categories for slots 1..4 — Beach and SeaFloor are skipped, which is
+    // fine for most maps (SeaFloor is replaced visually by the water plane, Beach is rare).
+    private const int VanillaMacroSlot = 5;
     private static readonly (SmartBrushTool.TerrainCategory cat, int strata)[] StrataOrder =
     {
         (SmartBrushTool.TerrainCategory.Rock,     1),
         (SmartBrushTool.TerrainCategory.Dirt,     2),
-        (SmartBrushTool.TerrainCategory.Beach,    3),
-        (SmartBrushTool.TerrainCategory.Snow,     4),
-        (SmartBrushTool.TerrainCategory.Plateau,  5),
-        (SmartBrushTool.TerrainCategory.SeaFloor, 6),
+        (SmartBrushTool.TerrainCategory.Snow,     3),
+        (SmartBrushTool.TerrainCategory.Plateau,  4),
     };
 
     public static ScMap Generate(MapGenerationOptions opts)
@@ -327,20 +327,19 @@ public static class MapGenerator
             }
         }
 
-        // Strata 9 = upper/macro layer (e.g. macrotexture000 in Evergreen, macroice in Tundra).
-        // Shader mixes this on top via its own alpha — it MUST be a real vanilla macro texture,
-        // otherwise the fallback magenta would flood the entire map. The caller is responsible
-        // for picking the right one for the biome; we no longer paper over an empty value.
-        if (!string.IsNullOrEmpty(opts.MacroTexturePath) && map.TerrainTextures.Length > 9)
+        // Macro layer at slot 5 for vanilla v53 (always-on alpha overlay rendered by the shader's
+        // upper-layer path). It MUST be a real vanilla macro texture or the fallback magenta would
+        // flood the entire map. The caller is responsible for picking the right one per biome.
+        if (!string.IsNullOrEmpty(opts.MacroTexturePath) && map.TerrainTextures.Length > VanillaMacroSlot)
         {
-            map.TerrainTextures[9].AlbedoPath = opts.MacroTexturePath!;
-            map.TerrainTextures[9].AlbedoScale = 256f; // macros tile across the whole map
-            map.TerrainTextures[9].NormalScale = 256f;
-            Services.DebugLog.Write($"[MapGen] Strata 9 (macro) ← {opts.MacroTexturePath}");
+            map.TerrainTextures[VanillaMacroSlot].AlbedoPath = opts.MacroTexturePath!;
+            map.TerrainTextures[VanillaMacroSlot].AlbedoScale = 256f; // macros tile across the whole map
+            map.TerrainTextures[VanillaMacroSlot].NormalScale = 256f;
+            Services.DebugLog.Write($"[MapGen] Strata {VanillaMacroSlot} (macro) ← {opts.MacroTexturePath}");
         }
         else
         {
-            Services.DebugLog.Write("[MapGen] Strata 9 (macro) — NO PATH SUPPLIED — map will render magenta!");
+            Services.DebugLog.Write($"[MapGen] Strata {VanillaMacroSlot} (macro) — NO PATH SUPPLIED — map will render magenta!");
         }
 
         foreach (var (cat, strata) in StrataOrder)

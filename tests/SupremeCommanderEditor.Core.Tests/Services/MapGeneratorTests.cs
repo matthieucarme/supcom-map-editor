@@ -30,22 +30,20 @@ public class MapGeneratorTests
 
         var map = MapGenerator.Generate(opts);
 
-        // Strata 0 should have the Grass texture as base
+        // Vanilla v53 layout: 6 slots total (base + 4 splatmap-blended + macro).
+        Assert.Equal(6, map.TerrainTextures.Length);
+        // Strata 0 = Grass (base)
         Assert.Equal("/env/evergreen2/layers/evgrass005_albedo.dds", map.TerrainTextures[0].AlbedoPath);
         // Strata 1 = Rock
         Assert.Equal("/env/evergreen2/layers/evrock006_albedo.dds", map.TerrainTextures[1].AlbedoPath);
         // Strata 2 = Dirt
         Assert.Equal("/env/evergreen2/layers/eg_gravel01_albedo.dds", map.TerrainTextures[2].AlbedoPath);
-        // Strata 3 = Beach
-        Assert.Equal("/env/evergreen/layers/eg_sand_albedo.dds", map.TerrainTextures[3].AlbedoPath);
-        // Strata 4 = Snow
-        Assert.Equal("/env/tundra/layers/tund_snow_albedo.dds", map.TerrainTextures[4].AlbedoPath);
-        // Strata 5 = Plateau
-        Assert.Equal("/env/redrocks/layers/rr_drygrass_albedo.dds", map.TerrainTextures[5].AlbedoPath);
-        // Strata 6 = SeaFloor
-        Assert.Equal("/env/swamp/layers/sw_water_albedo.dds", map.TerrainTextures[6].AlbedoPath);
-        // Strata 7 unused
-        Assert.Equal("", map.TerrainTextures[7].AlbedoPath);
+        // Strata 3 = Snow (Beach was dropped — only 4 splatmap slots in vanilla v53)
+        Assert.Equal("/env/tundra/layers/tund_snow_albedo.dds", map.TerrainTextures[3].AlbedoPath);
+        // Strata 4 = Plateau
+        Assert.Equal("/env/redrocks/layers/rr_drygrass_albedo.dds", map.TerrainTextures[4].AlbedoPath);
+        // Strata 5 = macro overlay (alpha-blended on top by the shader)
+        // The test data passes Beach/SeaFloor too but those are skipped in the 6-slot vanilla layout.
     }
 
     [Fact]

@@ -19,6 +19,13 @@ public class Marker
     public List<string> AdjacentMarkers { get; set; } = [];
     public string? Graph { get; set; }
 
+    /// <summary>Prop blueprint path (e.g. <c>/env/common/props/markers/M_Mass_prop.bp</c>). SC1
+    /// uses this to spawn the visible 3D model at the marker position — without it the engine
+    /// crashes on map load for the standard marker types. The writer emits a sensible default
+    /// for the well-known types (Mass, Hydrocarbon, Expansion, Defensive, etc.) when this is
+    /// empty, so user-created markers also get a valid prop reference.</summary>
+    public string? Prop { get; set; }
+
     // Camera
     public float? Zoom { get; set; }
     public bool? CanSetCamera { get; set; }

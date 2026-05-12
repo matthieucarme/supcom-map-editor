@@ -47,8 +47,20 @@ public static class SaveLuaWriter
         sb.AppendLine("    Chains = {");
         sb.AppendLine("    },");
 
-        // Armies
+        // Orders / Platoons section — vanilla SC1 expects these even when empty. Skipping them
+        // makes the engine crash on map load while resolving Scenario.Orders / Scenario.Platoons.
+        sb.AppendLine("    next_queue_id = '1',");
+        sb.AppendLine("    Orders = {");
+        sb.AppendLine("    },");
+        sb.AppendLine("    next_platoon_id = '1',");
+        sb.AppendLine("    Platoons = {");
+        sb.AppendLine("    },");
+
+        // Armies — plus the `next_group_id` / `next_unit_id` counters vanilla maps include
+        // alongside next_army_id (used by the in-game editor when adding new entities).
         sb.AppendLine("    next_army_id = '" + (armies.Count + 1) + "',");
+        sb.AppendLine("    next_group_id = '1',");
+        sb.AppendLine("    next_unit_id = '1',");
         sb.AppendLine("    Armies = {");
 
         foreach (var army in armies)
@@ -78,10 +90,25 @@ public static class SaveLuaWriter
                 $"{indent}    ['amount'] = FLOAT( {marker.Amount:F6} ),"));
         }
 
+        // `hint = BOOLEAN(true)` marks the marker for the AI's strategic decision logic. Vanilla
+        // maps put it on every Combat Zone / Defensive Point / Rally Point / Naval Area /
+        // Expansion Area / Protected Experimental Construction marker. Missing it makes the AI
+        // module crash on map load. Auto-default per type if the marker wasn't loaded with one.
+        bool shouldHint = marker.Hint == "true" || DefaultHintFor(marker.Type);
+        if (shouldHint)
+            sb.AppendLine($"{indent}    ['hint'] = BOOLEAN( true ),");
+
         if (marker.Color != null)
             sb.AppendLine($"{indent}    ['color'] = STRING( '{marker.Color}' ),");
 
         sb.AppendLine($"{indent}    ['type'] = STRING( '{typeStr}' ),");
+
+        // SC1 spawns the visible 3D model for the marker from this blueprint. Without it the
+        // engine crashes when it tries to instantiate the marker entity. Prefer the value read
+        // from the original save.lua; fall back to the standard vanilla prop for the type.
+        var prop = !string.IsNullOrEmpty(marker.Prop) ? marker.Prop : DefaultPropFor(marker.Type);
+        if (!string.IsNullOrEmpty(prop))
+            sb.AppendLine($"{indent}    ['prop'] = STRING( '{prop}' ),");
 
         sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
             $"{indent}    ['orientation'] = VECTOR3( {marker.Orientation.X:G}, {marker.Orientation.Y:G}, {marker.Orientation.Z:G} ),"));
@@ -143,6 +170,40 @@ public static class SaveLuaWriter
             $"{indent}    Orientation = VECTOR3( {u.Orientation.X:G}, {u.Orientation.Y:G}, {u.Orientation.Z:G} ),"));
         sb.AppendLine($"{indent}}},");
     }
+
+    /// <summary>Strategic marker types vanilla always tags with <c>hint = BOOLEAN(true)</c>.
+    /// SC1's AI module crashes during map load if these strategy markers don't carry the flag.</summary>
+    private static bool DefaultHintFor(MarkerType type) => type switch
+    {
+        MarkerType.CombatZone or
+        MarkerType.DefensePoint or
+        MarkerType.RallyPoint or
+        MarkerType.NavalRallyPoint or
+        MarkerType.NavalArea or
+        MarkerType.ExpansionArea or
+        MarkerType.LargeExpansionArea or
+        MarkerType.ProtectedExperimentalConstruction => true,
+        _ => false,
+    };
+
+    /// <summary>Default prop blueprint path used by vanilla SC1 for the well-known marker types.
+    /// Mirrors what GPG's official maps (SCMP_001..040) ship with. Path nodes / camera / weather /
+    /// effect markers don't have a prop in vanilla — returning null skips the field.</summary>
+    private static string? DefaultPropFor(MarkerType type) => type switch
+    {
+        MarkerType.Mass        => "/env/common/props/markers/M_Mass_prop.bp",
+        MarkerType.Hydrocarbon => "/env/common/props/markers/M_Hydrocarbon_prop.bp",
+        MarkerType.BlankMarker => "/env/common/props/markers/M_Blank_prop.bp",
+        MarkerType.CombatZone  => "/env/common/props/markers/M_CombatZone_prop.bp",
+        MarkerType.DefensePoint        or
+        MarkerType.RallyPoint          or
+        MarkerType.NavalRallyPoint     => "/env/common/props/markers/M_Defensive_prop.bp",
+        MarkerType.ExpansionArea       or
+        MarkerType.LargeExpansionArea  or
+        MarkerType.NavalArea           or
+        MarkerType.ProtectedExperimentalConstruction => "/env/common/props/markers/M_Expansion_prop.bp",
+        _ => null,
+    };
 
     public static string MarkerTypeToString(MarkerType type) => type switch
     {

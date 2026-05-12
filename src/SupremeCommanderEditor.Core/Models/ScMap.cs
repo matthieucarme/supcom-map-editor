@@ -60,10 +60,31 @@ public class ScMap
     public int NormalMapWidth { get; set; }
     public int NormalMapHeight { get; set; }
     public byte[] NormalMapDds { get; set; } = [];
+    /// <summary>Extra normal-map DDS blobs beyond the primary one. Most maps have a single blob
+    /// (<c>NormalMapCount = 1</c>) but 4096-sized vanilla maps (SCMP_029, SCMP_030) ship with
+    /// <c>NormalMapCount = 4</c> — the 3 extras are unused by the renderer but must be preserved
+    /// verbatim for binary-identical round-trip and to keep SC1's engine happy.</summary>
+    public List<byte[]> ExtraNormalMapDds { get; set; } = [];
 
     // === Texture Masks (Splat Maps) ===
     public TextureMask TextureMaskLow { get; set; } = new();
     public TextureMask TextureMaskHigh { get; set; } = new();
+    /// <summary>v53-only: some vanilla maps (e.g. SCMP_001) prefix each texture-mask DDS with a
+    /// count int (always 1), others (e.g. SCMP_030) do not. The reader detects which on load and
+    /// the writer honours the original layout to keep round-trip identical. v56+ never has a
+    /// count prefix and this flag is ignored there.</summary>
+    public bool V53MasksHaveCountPrefix { get; set; } = true;
+
+    /// <summary>v56+ only: same inconsistency as above on the water-map DDS. SCMP_018 ships with
+    /// `count(1) + length + DDS`, SCMP_029 ships with `length + DDS` only. Reader sniffs; writer
+    /// honours the detected layout.</summary>
+    public bool V56WaterMapHasCountPrefix { get; set; } = true;
+
+    /// <summary>Opaque bytes between the watermaps section and the props section. Only 4096×4096
+    /// vanilla maps (SCMP_029, SCMP_030) include this extra blob — about 25 MB for v53 and 37 MB
+    /// for v56. The format is undocumented; we preserve it verbatim for round-trip but make no
+    /// attempt to parse it.</summary>
+    public byte[] PostWatermapsExtra { get; set; } = [];
 
     // === Water Maps ===
     public byte[] WaterMapDds { get; set; } = [];

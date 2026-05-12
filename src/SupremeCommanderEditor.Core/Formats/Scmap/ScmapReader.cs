@@ -9,6 +9,7 @@ namespace SupremeCommanderEditor.Core.Formats.Scmap;
 /// </summary>
 public static class ScmapReader
 {
+
     public const int ScmapMagic = 0x1a70614d; // "Map\x1a"
 
     public static ScMap Read(string filePath)
@@ -101,9 +102,9 @@ public static class ScmapReader
         map.BackgroundTexturePath = reader.ReadNullTerminatedString();
         map.SkyCubemapPath = reader.ReadNullTerminatedString();
 
-        if (map.VersionMinor <= 53)
+        if (map.VersionMinor < 56)
         {
-            // v53: single environment cubemap path, no count
+            // v53 and v54: single environment cubemap path, no count
             var path = reader.ReadNullTerminatedString();
             map.EnvironmentCubeMaps =
             [
@@ -326,27 +327,38 @@ public static class ScmapReader
         map.NormalMapWidth = reader.ReadInt32();
         map.NormalMapHeight = reader.ReadInt32();
 
-        int normalCount = reader.ReadInt32(); // Always 1
+        // Most maps have normalCount=1; 4096-sized vanilla maps ship with normalCount=4 (3 extra
+        // unused DDS blobs follow). Read all of them so we don't desync the stream.
+        int normalCount = reader.ReadInt32();
         if (normalCount > 0)
-        {
             map.NormalMapDds = DdsHelper.ReadDdsBlob(reader);
-        }
+        for (int i = 1; i < normalCount; i++)
+            map.ExtraNormalMapDds.Add(DdsHelper.ReadDdsBlob(reader));
     }
 
     private static void ReadTextureMasks(BinaryReader reader, ScMap map)
     {
         if (map.VersionMinor <= 53)
         {
-            // v53: each mask has a count prefix (always 1)
-            int countLow = reader.ReadInt32();
-            if (countLow > 0)
+            // v53 is inconsistent across vanilla maps: some (SCMP_001, SCMP_009) prefix each mask
+            // with a count int (= 1), others (SCMP_030, SCMP_040) skip it. Sniff the first int —
+            // if it's 1 we're in count-prefix mode; otherwise rewind and treat the bytes as the
+            // DDS blob length directly. Record which variant for the writer.
+            int sniff = reader.ReadInt32();
+            if (sniff == 1)
             {
+                map.V53MasksHaveCountPrefix = true;
                 map.TextureMaskLow.DdsData = DdsHelper.ReadDdsBlob(reader);
+                int countHigh = reader.ReadInt32();
+                if (countHigh > 0)
+                    map.TextureMaskHigh.DdsData = DdsHelper.ReadDdsBlob(reader);
             }
-
-            int countHigh = reader.ReadInt32();
-            if (countHigh > 0)
+            else
             {
+                // Rewind and read both masks as plain length-prefixed DDS blobs.
+                map.V53MasksHaveCountPrefix = false;
+                reader.BaseStream.Seek(-4, SeekOrigin.Current);
+                map.TextureMaskLow.DdsData = DdsHelper.ReadDdsBlob(reader);
                 map.TextureMaskHigh.DdsData = DdsHelper.ReadDdsBlob(reader);
             }
         }
@@ -380,10 +392,23 @@ public static class ScmapReader
         }
         else
         {
-            // v56+: water map count + DDS blob
-            int waterMapCount = reader.ReadInt32();
-            if (waterMapCount > 0)
+            // v56+: same SCMP_018/SCMP_029 inconsistency as the v53 texture masks. Sniff the
+            // first int — = 0: no water map; = 1: count-prefix mode (read DDS); other: it's the
+            // DDS length itself, rewind 4 bytes and read directly.
+            int sniff = reader.ReadInt32();
+            if (sniff == 0)
             {
+                map.V56WaterMapHasCountPrefix = true;
+            }
+            else if (sniff == 1)
+            {
+                map.V56WaterMapHasCountPrefix = true;
+                map.WaterMapDds = DdsHelper.ReadDdsBlob(reader);
+            }
+            else
+            {
+                map.V56WaterMapHasCountPrefix = false;
+                reader.BaseStream.Seek(-4, SeekOrigin.Current);
                 map.WaterMapDds = DdsHelper.ReadDdsBlob(reader);
             }
         }
@@ -457,6 +482,19 @@ public static class ScmapReader
 
     private static void ReadProps(BinaryReader reader, ScMap map)
     {
+        // 4096×4096 vanilla maps (SCMP_029, SCMP_030) embed an undocumented blob between the
+        // watermaps section and the props section. Locate where the props count actually starts
+        // by scanning for "int count + '/' starting a blueprint path", and preserve the bytes in
+        // between as PostWatermapsExtra so the writer can round-trip them verbatim.
+        long startPos = reader.BaseStream.Position;
+        long propsCountPos = LocatePropsCount(reader, startPos);
+        if (propsCountPos > startPos)
+        {
+            int blobLen = (int)(propsCountPos - startPos);
+            reader.BaseStream.Seek(startPos, SeekOrigin.Begin);
+            map.PostWatermapsExtra = reader.ReadBytes(blobLen);
+        }
+
         int count = reader.ReadInt32();
         map.Props = new List<Prop>(count);
 
@@ -472,5 +510,62 @@ public static class ScmapReader
                 Scale = reader.ReadVector3()
             });
         }
+    }
+
+    /// <summary>Find the offset where the props count int lives. For most maps it's exactly
+    /// `startPos`; for 4096-sized maps an unknown 25–37 MB blob precedes it. We accept a
+    /// candidate position when bytes [pos..pos+3] form a plausible count (0 ≤ N ≤ 10⁶) AND the
+    /// next byte is '/' (the start of a typical BlueprintPath like "/env/..."). If we can't find
+    /// such a pattern, fall back to startPos and let the existing logic read whatever's there
+    /// (which historically gave count=0, harmless).</summary>
+    private static long LocatePropsCount(BinaryReader reader, long startPos)
+    {
+        long len = reader.BaseStream.Length;
+        // Try the obvious position first: most maps have props right after watermaps.
+        if (CountThenSlash(reader, startPos)) return startPos;
+        if (CountIsZeroAtEof(reader, startPos)) return startPos;
+
+        // 4096-sized vanilla maps hide the props count behind a big opaque blob. Read everything
+        // remaining into memory and scan for the count-then-slash pattern. Cheap on a 40 MB blob.
+        int bufLen = (int)(len - startPos);
+        reader.BaseStream.Seek(startPos, SeekOrigin.Begin);
+        byte[] buf = reader.ReadBytes(bufLen);
+        for (int i = 0; i + 5 <= bufLen; i++)
+        {
+            if (buf[i + 4] != 0x2F) continue; // require '/' at position +4
+            int candidate = BitConverter.ToInt32(buf, i);
+            if (candidate < 0 || candidate > 1_000_000) continue;
+            return startPos + i;
+        }
+        // Nothing matched — restore position and signal caller (no blob).
+        reader.BaseStream.Seek(startPos, SeekOrigin.Begin);
+        return startPos;
+    }
+
+    private static bool CountThenSlash(BinaryReader reader, long pos)
+    {
+        long save = reader.BaseStream.Position;
+        reader.BaseStream.Seek(pos, SeekOrigin.Begin);
+        try
+        {
+            if (reader.BaseStream.Length - pos < 5) return false;
+            int count = reader.ReadInt32();
+            byte next = reader.ReadByte();
+            return next == 0x2F && count >= 0 && count <= 1_000_000;
+        }
+        finally { reader.BaseStream.Seek(save, SeekOrigin.Begin); }
+    }
+
+    private static bool CountIsZeroAtEof(BinaryReader reader, long pos)
+    {
+        long save = reader.BaseStream.Position;
+        reader.BaseStream.Seek(pos, SeekOrigin.Begin);
+        try
+        {
+            if (reader.BaseStream.Length - pos < 4) return true; // not even room for a count → no props
+            int count = reader.ReadInt32();
+            return count == 0 && reader.BaseStream.Position >= reader.BaseStream.Length - 8;
+        }
+        finally { reader.BaseStream.Seek(save, SeekOrigin.Begin); }
     }
 }

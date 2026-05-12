@@ -156,20 +156,32 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var map = ScmapReader.Read(scmapPath);
-            // Bring every loaded map up to the canonical 10-strata layout (base + 8 splatmap-paintable
-            // + macro at slot 9). Vanilla v53 maps often ship with only 6 slots, which would cap the
-            // paint workflow at 4 layers — expansion is purely additive (existing slots and macro
-            // position-in-array preserved by index 0..N-2 → 0..N-2, last → 9).
-            Core.Services.MapStrataNormalizer.EnsureTenSlots(map);
+            // Rewrite any bare-filename texture paths (e.g. SCMP_021's slot 0 = "snow_albedo.dds")
+            // into absolute /env/<tileset>/layers/... by inferring dir+prefix from the other slots.
+            Core.Services.MapStrataNormalizer.NormalizeRelativeTexturePaths(map);
+            // Pad short v53 maps up to the vanilla 6-slot layout (base + 4 splatmap + macro) so
+            // the paint workflow always has 4 paintable strata. Never beyond 6 — SC1 crashes on a
+            // 10-slot v53. v56+ maps with their 10 native slots pass through unchanged.
+            Core.Services.MapStrataNormalizer.EnsureVanillaSlots(map);
             var dir = Path.GetDirectoryName(scmapPath)!;
             var baseName = Path.GetFileNameWithoutExtension(scmapPath);
 
-            var scenarioPath = Path.Combine(dir, $"{baseName}_scenario.lua");
-            if (File.Exists(scenarioPath))
+            // Some vanilla SC maps mix casing (e.g. SCMP_039.scmap but scmp_039_save.lua) — on
+            // case-sensitive filesystems (Linux) the naive `File.Exists("SCMP_039_save.lua")`
+            // returns false and markers + scenario silently fail to load. Resolve companions
+            // case-insensitively against what's actually on disk.
+            var siblings = Directory.Exists(dir)
+                ? Directory.GetFiles(dir).ToDictionary(p => Path.GetFileName(p), p => p, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string? ResolveCompanion(string suffix)
+                => siblings.TryGetValue(baseName + suffix, out var p) ? p : null;
+
+            var scenarioPath = ResolveCompanion("_scenario.lua");
+            if (scenarioPath != null)
                 map.Info = ScenarioLuaReader.Read(scenarioPath);
 
-            var savePath = Path.Combine(dir, $"{baseName}_save.lua");
-            if (File.Exists(savePath))
+            var savePath = ResolveCompanion("_save.lua");
+            if (savePath != null)
             {
                 map.Markers = SaveLuaReader.ReadMarkers(savePath);
                 // Load pre-placed civilian/neutral units and attach them to the matching armies in MapInfo.
@@ -200,8 +212,10 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Resolve the canonical save folder for the current map: <c>&lt;game&gt;/maps/&lt;sanitized map name&gt;/</c>.
-    /// Returns (null, error message) when the game folder isn't detected or the map name is empty.
+    /// Resolve the canonical save folder for the current map: always
+    /// <c>&lt;game&gt;/maps/&lt;sanitized map name&gt;/</c>. Renaming the map (via Map Info) moves the
+    /// save target to a new folder. Returns (null, error message) when the game folder isn't
+    /// detected or the map name is empty.
     /// </summary>
     public (string? folder, string? error) GetCanonicalSaveFolder()
     {
@@ -215,19 +229,13 @@ public partial class MainWindowViewModel : ObservableObject
         return (Path.Combine(GameData.GamePath!, "maps", sanitized), null);
     }
 
-    /// <summary>True if the canonical target folder already exists on disk AND it isn't the folder
-    /// the current map was loaded from (in which case overwriting is implicit and no prompt needed).</summary>
+    /// <summary>True iff the canonical target folder already exists on disk. The user gets the
+    /// overwrite-confirm prompt every save — simpler than session tracking and a safety belt
+    /// against an accidental Save after a rename.</summary>
     public bool CanonicalFolderRequiresOverwriteConfirm()
     {
         var (folder, _) = GetCanonicalSaveFolder();
-        if (folder == null) return false;
-        if (!Directory.Exists(folder)) return false;
-        if (CurrentFilePath != null && string.Equals(
-                Path.GetFullPath(Path.GetDirectoryName(CurrentFilePath)!),
-                Path.GetFullPath(folder),
-                StringComparison.OrdinalIgnoreCase))
-            return false;
-        return true;
+        return folder != null && Directory.Exists(folder);
     }
 
     [RelayCommand]
@@ -893,14 +901,18 @@ public partial class MainWindowViewModel : ObservableObject
     public event Action<Services.WaterSetting>? WaterSettingActivated;
 
     /// <summary>
-    /// Highest strata index that can be painted into the splatmap on this map. All loaded maps
-    /// are normalised to the 10-slot layout (slot 0 = base, slots 1..8 splatmap-paintable, slot 9
-    /// = macro), so this always returns 8 once a map is open.
+    /// Highest strata index that can be painted into the splatmap on this map. For vanilla v53
+    /// maps with N slots the last slot is the macro/upper layer (not splatmap-blended), so only
+    /// slots 1..N-2 are paintable — typically 4 for SCMP_001..040. v56+ maps with 10 slots get
+    /// 1..8.
     /// </summary>
     public int MaxPaintableStrata()
     {
         if (CurrentMap == null) return 0;
-        return Math.Min(8, CurrentMap.TerrainTextures.Length - 1);
+        int len = CurrentMap.TerrainTextures.Length;
+        // v53 macro convention: short layer arrays (≤6) → last slot is the macro, paintable = N-2.
+        if (len <= 6 && len > 1) return Math.Min(8, len - 2);
+        return Math.Min(8, len - 1);
     }
 
     /// <summary>Force the palette to rebuild — call after loading a map (strata changed) or after

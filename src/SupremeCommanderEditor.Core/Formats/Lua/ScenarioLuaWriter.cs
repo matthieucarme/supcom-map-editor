@@ -36,7 +36,10 @@ public static class ScenarioLuaWriter
         sb.AppendLine($"    map = '/maps/{mapFolderName}/{mapBaseName}.scmap',");
         sb.AppendLine($"    save = '/maps/{mapFolderName}/{mapBaseName}_save.lua',");
         sb.AppendLine($"    script = '/maps/{mapFolderName}/{mapBaseName}_script.lua',");
-        sb.AppendLine($"    map_version = {info.MapVersion},");
+        // NOTE: `map_version` is a FAF extension (used by Forged Alliance Forever to track map
+        // revisions in the lobby). Vanilla SC1 doesn't recognise it: the lobby appends the value
+        // in parentheses next to the map name AND selecting the entry crashes the game. Skip it
+        // entirely so saved maps stay compatible with vanilla SC1.
         sb.AppendLine("    Configurations = {");
         sb.AppendLine("        ['standard'] = {");
         sb.AppendLine("            teams = {");
@@ -48,6 +51,13 @@ public static class ScenarioLuaWriter
         sb.AppendLine("} },");
         sb.AppendLine("            },");
         sb.AppendLine("            customprops = {");
+        // Preserve every customprops entry we read on load. Without this we'd strip
+        // ['ExtraArmies'] = STRING('ARMY_9 NEUTRAL_CIVILIAN') and SC1 would crash on map load
+        // because save.lua references those armies but they're no longer declared in scenario.
+        foreach (var kv in info.CustomProps)
+        {
+            sb.AppendLine($"                ['{EscapeLua(kv.Key)}'] = STRING( '{EscapeLua(kv.Value)}' ),");
+        }
         sb.AppendLine("            },");
         sb.AppendLine("        },");
         sb.AppendLine("    },");

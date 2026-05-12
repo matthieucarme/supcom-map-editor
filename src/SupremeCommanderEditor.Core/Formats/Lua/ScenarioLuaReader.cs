@@ -68,6 +68,21 @@ public static class ScenarioLuaReader
             }
         }
 
+        // Customprops sit under Configurations.standard.customprops. Vanilla maps with neutrals
+        // ship with ['ExtraArmies'] = STRING('ARMY_9 NEUTRAL_CIVILIAN') — we must round-trip the
+        // whole table or the engine crashes when it can't resolve those armies on map load.
+        var customProps = standard != null ? LuaRuntime.GetTable(standard, "customprops") : null;
+        if (customProps != null)
+        {
+            foreach (var pair in customProps.Pairs)
+            {
+                if (pair.Key.Type != DataType.String) continue;
+                var key = pair.Key.String;
+                if (pair.Value.Type == DataType.String)
+                    info.CustomProps[key] = pair.Value.String;
+            }
+        }
+
         return info;
     }
 }

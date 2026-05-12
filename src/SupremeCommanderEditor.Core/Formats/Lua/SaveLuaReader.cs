@@ -99,6 +99,9 @@ public static class SaveLuaReader
     {
         var typeStr = LuaRuntime.GetString(t, "type", "Blank Marker");
 
+        // Read the prop blueprint reference if present; let an empty value flow through so the
+        // writer's DefaultPropFor() fallback fires for user-created markers.
+        var propPath = LuaRuntime.GetString(t, "prop");
         var marker = new Marker
         {
             Name = name,
@@ -109,6 +112,7 @@ public static class SaveLuaReader
             Amount = (float)LuaRuntime.GetNumber(t, "amount", 100),
             Color = LuaRuntime.GetString(t, "color"),
             Hint = LuaRuntime.GetBool(t, "hint") ? "true" : null,
+            Prop = string.IsNullOrEmpty(propPath) ? null : propPath,
         };
 
         // AI path adjacency

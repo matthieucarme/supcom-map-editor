@@ -62,10 +62,10 @@ public class TerrainRenderer : IDisposable
         // Detect shader type for half-range transform
         _terrainShaderType = map.TerrainShader.Contains("XP") || map.TerrainShader.Contains("250") ? 1 : 0;
 
-        // All maps reach this renderer normalised to 10 slots (MapStrataNormalizer.EnsureTenSlots
-        // runs at load time and the generator always produces 10), so the macro overlay is always
-        // at slot 9.
-        _upperLayerIndex = 9;
+        // Macro/upper-layer index : for SC1 vanilla v53 (≤6 slots) the macro lives at slot N-1
+        // (typically 5); for v56+ (10 slots) it's slot 9. The shader skips the regular splatmap
+        // blend on the macro slot and instead blends it via its own alpha at the end.
+        _upperLayerIndex = (_stratumCount <= 6 && _stratumCount > 1) ? _stratumCount - 1 : 9;
 
         // Upload splatmaps
         if (map.TextureMaskLow.DdsData.Length > 128 && map.TextureMaskLow.Width > 0)

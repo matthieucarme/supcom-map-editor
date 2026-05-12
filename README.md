@@ -1,9 +1,13 @@
 # Supreme Commander Map Editor
 
-Cross-platform map editor for **Supreme Commander 1** and **Supreme Commander: Forged Alliance**.
+Cross-platform map editor for **Supreme Commander 1** (vanilla 2007 / SupCom 1).
 Built with Avalonia + OpenGL on .NET 9.
 
-It was mainly built for supcom vanilla, I did not test it on forged alliance, but should work on it.
+Forged Alliance is **not** a target — saved maps stay in the vanilla v53 format (6 strata slots,
+single-byte high splatmap, no FA-specific scenario fields). Maps load fine in the original SupCom 1
+without crashes. If you want to use FA-saved maps as a starting point you can open them in the
+editor, but the saved output will be vanilla-formatted.
+
 It is 100% vibe coded...
 
 ## Install
@@ -17,8 +21,10 @@ Or build from source — see [Build & Run](#build--run).
 
 ## Features
 
-- Read & write `.scmap` v53 / v56 / v60 (binary-identical round-trip)
-- Read & write `_scenario.lua` / `_save.lua` / `_script.lua`
+- Read & write `.scmap` (vanilla v53 target — also reads v56/v60 from FA maps)
+- Read & write `_scenario.lua` / `_save.lua` / `_script.lua` in SC1's exact format (marker
+  `prop` and `hint` fields, customprops, ExtraArmies, Orders/Platoons sections — all the
+  things SC1's engine needs or it crashes on load)
 - Real-time 3D viewport (OpenGL, terrain mesh + water + lighting + markers)
 - Top-down 2D viewport with grid, snap, box-select, prop / unit menus
 - Heightmap brush (raise, lower, smooth, flatten, set-height)
@@ -54,11 +60,15 @@ Wrapped in a `.zip` automatically to avoid SmartScreen on first launch.
 The editor needs to read texture archives (`.scd` files) from your Supreme Commander install:
 `<Steam library>/Supreme Commander/gamedata/`
 
-On first launch the editor tries to auto-detect a Steam install (parsing `libraryfolders.vdf`).
-If detection fails, use **Settings → Set game folder…** to point it manually.
+On launch the editor auto-detects a Steam install (parses `libraryfolders.vdf`), preferring the
+vanilla `Supreme Commander` folder over `Supreme Commander Forged Alliance` if both are installed
+since vanilla is the target.
 
 Without a game install the editor still runs but terrain will render with a height-color
 fallback and many texture / icon features will be unavailable.
+
+Maps are read from / saved to `<game>/maps/<map name>/`. The Open dialog defaults to that folder
+and Save derives the folder name from the in-game map title (rename in Map Info tab to move it).
 
 ## Repository layout
 
@@ -100,5 +110,5 @@ dotnet run -- "<SteamLibrary>/Supreme Commander/gamedata/env.scd" \
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The editor is a fan project; Supreme Commander and Supreme
-Commander: Forged Alliance are trademarks of their respective owners.
+MIT — see [LICENSE](LICENSE). The editor is a fan project; Supreme Commander is a trademark of
+its respective owner.

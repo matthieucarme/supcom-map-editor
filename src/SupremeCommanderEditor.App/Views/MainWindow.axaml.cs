@@ -335,20 +335,6 @@ public partial class MainWindow : Window
         SkiaViewport.RefreshMarkers();
     }
 
-private async void OnRenameMap(object? sender, RoutedEventArgs e)
-    {
-        if (Vm.CurrentMap == null || Vm.CurrentFilePath == null) return;
-        var currentFolder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(Vm.CurrentFilePath)!);
-        var dialog = new RenameMapDialog(Vm.MapName, currentFolder);
-        await dialog.ShowDialog(this);
-        var newName = dialog.Result;
-        if (string.IsNullOrWhiteSpace(newName) || newName == Vm.MapName) return;
-
-        var error = Vm.RenameMap(newName);
-        if (error != null)
-            await new InfoDialog("Rename failed", error).ShowDialog(this);
-    }
-
     /// <summary>
     /// Single click handler shared by the 5 scale radio buttons in the Map Info tab. The desired
     /// size is encoded in the RadioButton's Tag attribute (e.g. "256"). A no-op if the map is
@@ -729,12 +715,11 @@ private async void OnRenameMap(object? sender, RoutedEventArgs e)
 
         var choices = new List<TextureReplaceDialog.StrataChoice>();
         // The base layer (strata 0) is the always-visible substrate beneath every splatmap blend,
-        // and the macro slot (always 9 since MapStrataNormalizer expands every loaded map to 10
-        // slots) is the alpha-blended overlay on top of everything. Both must be replaceable
-        // here too — otherwise users see patches of the original base bleed through after
-        // "changing all the textures".
+        // and the macro slot (last index — 5 for SC1 vanilla v53, 9 for v56+) is the alpha-blended
+        // overlay on top of everything. Both must be replaceable here too — otherwise users see
+        // patches of the original base bleed through after "changing all the textures".
         int totalSlots = map.TerrainTextures.Length;
-        const int macroSlot = Core.Services.MapStrataNormalizer.MacroSlot;
+        int macroSlot = totalSlots - 1;
         void AddChoice(int strata, string title)
         {
             if (strata < 0 || strata >= totalSlots) return;
