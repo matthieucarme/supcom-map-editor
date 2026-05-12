@@ -3,6 +3,9 @@
 Cross-platform map editor for **Supreme Commander 1** and **Supreme Commander: Forged Alliance**.
 Built with Avalonia + OpenGL on .NET 9.
 
+It was mainly built for supcom vanilla, I did not test it on forged alliance, but should work on it.
+It is 100% vibe coded...
+
 ## Features
 
 - Read & write `.scmap` v53 / v56 / v60 (binary-identical round-trip)
