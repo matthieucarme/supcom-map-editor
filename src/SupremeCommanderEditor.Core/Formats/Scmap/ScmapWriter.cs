@@ -75,6 +75,10 @@ public static class ScmapWriter
 
         foreach (var value in map.Heightmap.Data)
             writer.Write(value);
+
+        // v56+ writes a null padding byte after the heightmap; v53 doesn't.
+        if (map.VersionMinor > 53)
+            writer.Write((byte)0);
     }
 
     private static void WriteTerrainShaderAndEnvironment(BinaryWriter writer, ScMap map)

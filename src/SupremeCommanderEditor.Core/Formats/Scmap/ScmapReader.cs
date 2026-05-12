@@ -89,6 +89,10 @@ public static class ScmapReader
         {
             map.Heightmap.Data[i] = reader.ReadUInt16();
         }
+
+        // v56+ writes a null padding byte after the heightmap; v53 doesn't.
+        if (map.VersionMinor > 53)
+            reader.ReadByte();
     }
 
     private static void ReadTerrainShaderAndEnvironment(BinaryReader reader, ScMap map)
