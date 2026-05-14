@@ -850,9 +850,51 @@ public class SkiaMapControl : Panel
                 stroke.Color = new SKColor(20, 20, 20, 220);
                 return r;
             }
+            case MarkerType.ProtectedExperimentalConstruction:
+            {
+                // Magenta triangle — matches the icon shown in the catalog/hover popup.
+                fill.Color = new SKColor(255, 80, 200, 180);
+                float r = 7f;
+                DrawTriangle(canvas, x, y, r, pointingUp: true, fill);
+                DrawTriangle(canvas, x, y, r, pointingUp: true, stroke);
+                return r;
+            }
+            case MarkerType.CameraInfo:
+            {
+                // Light-blue diamond — saved camera viewpoint.
+                fill.Color = new SKColor(180, 180, 220);
+                float r = 6f;
+                DrawDiamond(canvas, x, y, r, fill);
+                DrawDiamond(canvas, x, y, r, stroke);
+                return r;
+            }
+            case MarkerType.WeatherGenerator:
+            case MarkerType.WeatherDefinition:
+            {
+                // Three overlapping circles → cloud silhouette.
+                fill.Color = new SKColor(200, 220, 255, 180);
+                stroke.Color = new SKColor(120, 140, 180);
+                canvas.DrawCircle(x,        y - 1.5f, 4.5f, fill);
+                canvas.DrawCircle(x + 2.5f, y + 0.5f, 4f,   fill);
+                canvas.DrawCircle(x - 3f,   y + 0.5f, 3.5f, fill);
+                canvas.DrawCircle(x,        y - 1.5f, 4.5f, stroke);
+                canvas.DrawCircle(x + 2.5f, y + 0.5f, 4f,   stroke);
+                canvas.DrawCircle(x - 3f,   y + 0.5f, 3.5f, stroke);
+                stroke.Color = new SKColor(20, 20, 20, 220);
+                return 5.5f;
+            }
+            case MarkerType.Effect:
+            {
+                // Yellow 4-pointed spark.
+                fill.Color = new SKColor(255, 220, 80);
+                float r = 6f;
+                DrawStar(canvas, x, y, r, 2.5f, 4, fill);
+                DrawStar(canvas, x, y, r, 2.5f, 4, stroke);
+                return r;
+            }
             default:
             {
-                // Generic small dot for camera/weather/effect/unknown
+                // Generic small dot — only for non-ARMY BlankMarker variants (editor stubs M_Mass/M_Blank/…).
                 fill.Color = new SKColor(200, 200, 200, 180);
                 float r = 2.5f;
                 canvas.DrawCircle(x, y, r, fill);

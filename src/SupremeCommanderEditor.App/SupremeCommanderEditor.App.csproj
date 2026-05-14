@@ -30,6 +30,10 @@
     <!-- Embeds the icon into the .exe itself (Windows shell / taskbar / Alt-Tab use this).
          Avalonia's runtime Window.Icon binding uses the same .ico via AvaloniaResource. -->
     <ApplicationIcon>Assets\supcom.ico</ApplicationIcon>
+    <!-- Bumped on every release tag. UpdateCheckService reads this at runtime to compare against
+         GitHub's latest release tag and show an in-app "update available" banner if there is one.
+         Keep in lockstep with the git tag (e.g. v1.1.0 → here 1.1.0). -->
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <!-- Publish defaults: one fully self-contained .exe, nothing on the side. These properties only

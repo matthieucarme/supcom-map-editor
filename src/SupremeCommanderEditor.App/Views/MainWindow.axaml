@@ -100,6 +100,23 @@
             <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="#999"/>
         </Border>
 
+        <!-- Update-available banner. Shown only when UpdateCheckService finds a newer GitHub
+             release than the running build. Clicking the button opens the release page in the
+             system browser — we intentionally do NOT auto-download or self-update. -->
+        <Border DockPanel.Dock="Top" Background="#2A4060" BorderBrush="#4A6080" BorderThickness="0,0,0,1"
+                Padding="10,5" IsVisible="{Binding IsUpdateAvailable}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Download" Click="OnOpenReleasePage"
+                        Padding="14,4" Background="#3E5F8C" Foreground="#FFF"/>
+                <Button DockPanel.Dock="Right" Content="Dismiss" Click="OnDismissUpdate"
+                        Padding="10,4" Background="Transparent" Foreground="#BBB" Margin="0,0,8,0"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#EEE" FontSize="12">
+                    <Run Text="A new version is available:"/>
+                    <Run Text="{Binding LatestVersionTag}" FontWeight="Bold"/>
+                </TextBlock>
+            </DockPanel>
+        </Border>
+
         <!-- Side panel removed: all map editing now lives in the bottom palettes of the 3D / 2D
              tabs, and map-level info / scale moved to the dedicated "Map Info" tab below. -->
         <!-- 3D viewport lives ALONGSIDE the TabControl (overlay grid cell) rather than inside
@@ -125,6 +142,9 @@
                                 <Border Background="#3A3A3F" Width="1" Margin="6,0"/>
                                 <ToggleButton Content="Smart" IsChecked="{Binding IsSmartTexturingEnabled}" Padding="10,4"
                                               ToolTip.Tip="When ON, every terrain stroke also paints the matching texture (sand near sea, rock on slopes, snow on peaks…). Missing categories are auto-added from the texture library if the map has free strata slots."/>
+                                <Border Background="#3A3A3F" Width="1" Margin="6,0"/>
+                                <ToggleButton Content="Cartography" IsChecked="{Binding IsCartographicMode}" Padding="10,4"
+                                              ToolTip.Tip="Stylised topographic render: cream/brown elevation ramp with contour lines instead of the textured biome. Easier to see what you're doing when painting textures, since the underlying shape pops more than the cluttered albedo. The 2D view inherits this automatically."/>
                             </StackPanel>
                         </Border>
 
@@ -204,6 +224,9 @@
                                 <TextBlock Text="Density:" VerticalAlignment="Center"/>
                                 <Slider Width="80" Minimum="1" Maximum="20" Value="{Binding PropBrushDensity}"/>
                                 <TextBlock Text="{Binding PropBrushDensity, StringFormat=F0}" Width="22" VerticalAlignment="Center"/>
+                                <Border Background="#3A3A3F" Width="1" Margin="6,0"/>
+                                <ToggleButton Content="Cartography" IsChecked="{Binding IsCartographicMode}" Padding="10,4"
+                                              ToolTip.Tip="Stylised topographic render of the underlying 3D scene (the 2D view is a top-down capture of it). Easier to see the terrain shape than the textured biome."/>
                                 <TextBlock Text="(Shift+drag = box-select, Delete = remove)" Foreground="#888" FontSize="11" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
@@ -333,6 +356,10 @@
                 <TabItem Header="Symmetry">
                     <ScrollViewer>
                         <StackPanel Margin="12" Spacing="14">
+                            <CheckBox Content="Terrain only (keep markers, props and pre-placed units in place)"
+                                      IsChecked="{Binding SymmetryTerrainOnly}"
+                                      Foreground="#DDD"
+                                      ToolTip.Tip="When checked, only the heightmap and splatmaps are mirrored. Useful for refining a generated map's terrain without scrambling the already-balanced spawn layout."/>
                             <TextBlock Text="Mirror ×1" FontWeight="Bold" Foreground="#DDD"/>
                             <TextBlock Text="Click the half you want to keep — it will be mirrored to the other side."
                                        Foreground="#999" FontSize="11"/>

@@ -13,6 +13,7 @@ public class SymmetryApplyOp : IMapOperation
     private readonly ScMap _map;
     private readonly SymmetryPattern _pattern;
     private readonly SymmetryRegion _source;
+    private readonly bool _terrainOnly;
 
     private ushort[]? _prevHeightmap;
     private byte[]? _prevMaskLow;
@@ -21,26 +22,40 @@ public class SymmetryApplyOp : IMapOperation
     private List<Prop>? _prevProps;
     private Dictionary<Army, List<UnitSpawn>>? _prevUnits;
 
-    public string Description => $"Symmetry {_pattern} ({_source})";
+    public string Description => _terrainOnly
+        ? $"Symmetry {_pattern} terrain ({_source})"
+        : $"Symmetry {_pattern} ({_source})";
 
-    public SymmetryApplyOp(ScMap map, SymmetryPattern pattern, SymmetryRegion source)
+    /// <param name="terrainOnly">When true, only the heightmap and splatmaps are mirrored;
+    /// markers, props, and per-army pre-placed units stay where they are. Useful for refining a
+    /// generated map's terrain without scrambling the already-balanced spawn layout.</param>
+    public SymmetryApplyOp(ScMap map, SymmetryPattern pattern, SymmetryRegion source, bool terrainOnly = false)
     {
         _map = map;
         _pattern = pattern;
         _source = source;
+        _terrainOnly = terrainOnly;
     }
 
     public void Execute()
     {
-        // Snapshot before mutating so Undo can restore.
+        // Snapshot before mutating so Undo can restore. Skip the entity snapshots in terrain-only
+        // mode — those lists aren't touched and copying them would be wasted memory.
         _prevHeightmap = (ushort[])_map.Heightmap.Data.Clone();
         _prevMaskLow = (byte[])_map.TextureMaskLow.DdsData.Clone();
         _prevMaskHigh = (byte[])_map.TextureMaskHigh.DdsData.Clone();
-        _prevMarkers = [.._map.Markers];
-        _prevProps = [.._map.Props];
-        _prevUnits = _map.Info.Armies.ToDictionary(a => a, a => a.InitialUnits.ToList());
 
-        SymmetryService.Apply(_map, _pattern, _source);
+        if (_terrainOnly)
+        {
+            SymmetryService.ApplyTerrainOnly(_map, _pattern, _source);
+        }
+        else
+        {
+            _prevMarkers = [.._map.Markers];
+            _prevProps = [.._map.Props];
+            _prevUnits = _map.Info.Armies.ToDictionary(a => a, a => a.InitialUnits.ToList());
+            SymmetryService.Apply(_map, _pattern, _source);
+        }
     }
 
     public void Undo()

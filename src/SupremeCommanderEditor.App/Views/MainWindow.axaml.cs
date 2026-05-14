@@ -159,6 +159,13 @@ public partial class MainWindow : Window
                     GlViewport.InvalidateTextures();
                     RequestSnapshotEvenIfHidden();
                 }
+                else if (args.PropertyName == nameof(MainWindowViewModel.IsCartographicMode))
+                {
+                    GlViewport.CartographicMode = vm.IsCartographicMode;
+                    // Refresh the 2D background snapshot so the cartographic palette appears there too
+                    // even if the user is currently looking at the 2D / Symmetry tabs.
+                    RequestSnapshotEvenIfHidden();
+                }
                 else if (args.PropertyName == nameof(MainWindowViewModel.SelectedMarker))
                 {
                     SkiaViewport.SelectedMarker = vm.SelectedMarker;
@@ -758,5 +765,32 @@ public partial class MainWindow : Window
     private void OnExit(object? sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    /// <summary>Open the GitHub release page for the latest version in the system browser. The user
+    /// downloads the new build themselves — we intentionally don't auto-update (single-file .exe
+    /// can't safely replace itself in-place).</summary>
+    private void OnOpenReleasePage(object? sender, RoutedEventArgs e)
+    {
+        var url = Vm.LatestReleaseUrl;
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            SupremeCommanderEditor.Core.Services.DebugLog.Write($"[Update] Failed to open browser: {ex.Message}");
+        }
+    }
+
+    /// <summary>Hide the update banner for the rest of this session. The next launch checks again
+    /// and re-surfaces if the user still hasn't installed the update.</summary>
+    private void OnDismissUpdate(object? sender, RoutedEventArgs e)
+    {
+        Vm.IsUpdateAvailable = false;
     }
 }

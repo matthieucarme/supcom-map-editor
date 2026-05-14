@@ -26,6 +26,10 @@ public class GlTerrainControl : OpenGlControlBase
     public System.Numerics.Vector2? BrushPos { get; set; }
     public float BrushRadius { get; set; }
 
+    /// <summary>Toggle stylised topographic render (contour lines + cream/brown ramp) — set by the
+    /// wrapper. The 2D snapshot inherits this automatically since it's captured from the 3D scene.</summary>
+    public bool CartographicMode { get; set; }
+
     /// <summary>Game data service for loading textures from SCD archives.</summary>
     public GameDataService? GameData { get; set; }
 
@@ -237,7 +241,9 @@ public class GlTerrainControl : OpenGlControlBase
             }
 
             float aspect = (float)w / h;
-            Terrain.Render(Camera, aspect, _map.Lighting, BrushPos, BrushRadius);
+            Terrain.Render(Camera, aspect, _map.Lighting, BrushPos, BrushRadius,
+                cartographicMode: CartographicMode,
+                waterElevation: _map.Water.HasWater ? _map.Water.Elevation : float.MinValue);
 
             // Water plane
             if (Water != null && _map.Water.HasWater)
@@ -331,7 +337,9 @@ public class GlTerrainControl : OpenGlControlBase
             var orthoCam = Camera.CreateTopDown(mapW, mapH, maxHeight: 1024f);
             float aspect = (float)capW / capH;
 
-            Terrain.Render(orthoCam, aspect, _map.Lighting, brushPos: null, brushRadius: 0f);
+            Terrain.Render(orthoCam, aspect, _map.Lighting, brushPos: null, brushRadius: 0f,
+                cartographicMode: CartographicMode,
+                waterElevation: _map.Water.HasWater ? _map.Water.Elevation : float.MinValue);
 
             if (Water != null && _map.Water.HasWater)
                 Water.Render(orthoCam, aspect, _map.Water);
@@ -419,6 +427,19 @@ public class OpenGlMapControl : Panel
 
     /// <summary>Request a top-down snapshot to be rendered on the next 3D frame.</summary>
     public void RequestTopDownSnapshot(int maxSize = 1024) => _glControl.RequestTopDownSnapshot(maxSize);
+
+    /// <summary>Toggle the topographic-style render (contour lines + cream/brown elevation ramp).
+    /// Used to make texture painting easier — both the 3D view and the 2D snapshot inherit it.</summary>
+    public bool CartographicMode
+    {
+        get => _glControl.CartographicMode;
+        set
+        {
+            if (_glControl.CartographicMode == value) return;
+            _glControl.CartographicMode = value;
+            _glControl.RequestRender();
+        }
+    }
 
     /// <summary>Wake the render loop — call after IsVisible becomes true to flush pending dirty flags.</summary>
     public void RequestRender() => _glControl.RequestRender();

@@ -197,7 +197,8 @@ public class TerrainRenderer : IDisposable
     }
 
     public void Render(Camera camera, float aspectRatio, LightingSettings lighting,
-        Vector2? brushPos = null, float brushRadius = 0, int renderMode = 0)
+        Vector2? brushPos = null, float brushRadius = 0, int renderMode = 0,
+        bool cartographicMode = false, float waterElevation = 0f)
     {
         if (!_initialized || _shader == null || _indexCount == 0) return;
 
@@ -241,6 +242,8 @@ public class TerrainRenderer : IDisposable
         _shader.SetUniform("uStratumCount", _stratumCount);
         _shader.SetUniform("uTerrainShaderType", _terrainShaderType);
         _shader.SetUniform("uUpperLayerIndex", _upperLayerIndex);
+        _shader.SetUniform("uCartographicMode", cartographicMode ? 1 : 0);
+        _shader.SetUniform("uWaterElevation", waterElevation);
 
         if (_texturesLoaded)
         {

@@ -95,6 +95,12 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Incremented each time the heightmap is modified, so renderers can rebuild meshes.</summary>
     [ObservableProperty] private int _heightmapVersion;
 
+    /// <summary>When true, the terrain renders as a stylised topographic map (cream/brown ramp +
+    /// contour lines) instead of the textured biome. Makes texture-painting easier to follow because
+    /// the underlying elevation pops more than the cluttered albedo. The 2D snapshot inherits the
+    /// same render path automatically since it's a capture of the 3D scene.</summary>
+    [ObservableProperty] private bool _isCartographicMode;
+
     public bool HasMap => CurrentMap != null;
 
     public AppSettingsService Settings { get; } = AppSettingsService.Load();
@@ -107,6 +113,45 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = $"Game data: {GameData.GamePath}";
         else
             StatusText = "Supreme Commander not found — install in a default Steam library to enable textures and save.";
+
+        // Fire-and-forget update check. Network failures are swallowed; on success the banner
+        // appears once the bound properties flip.
+        _ = CheckForUpdatesAsync();
+    }
+
+    /// <summary>The assembly version (e.g. "1.1.0") — used to compare against GitHub releases and
+    /// also surfaced in the title bar / diagnostics. Falls back to "0.0.0" if unset.</summary>
+    public static string AppVersion
+    {
+        get
+        {
+            var v = typeof(MainWindowViewModel).Assembly.GetName().Version;
+            return v == null ? "0.0.0" : $"{v.Major}.{v.Minor}.{v.Build}";
+        }
+    }
+
+    // --- Update notifier --------------------------------------------------------------------
+
+    /// <summary>True when GitHub reports a newer release than the running build. Bound to a banner
+    /// at the top of the main window. Stays false on network errors or if we're already up to date.</summary>
+    [ObservableProperty] private bool _isUpdateAvailable;
+
+    /// <summary>Tag of the latest GitHub release (e.g. "v1.2.0"). Empty when no check has succeeded.</summary>
+    [ObservableProperty] private string _latestVersionTag = "";
+
+    /// <summary>HTML URL of the latest release page. Opened in the system browser when the user clicks
+    /// the update banner. Empty when no check has succeeded.</summary>
+    [ObservableProperty] private string _latestReleaseUrl = "";
+
+    private async Task CheckForUpdatesAsync()
+    {
+        var info = await UpdateCheckService.CheckAsync(AppVersion).ConfigureAwait(true);
+        if (info.IsUpdateAvailable)
+        {
+            LatestVersionTag = info.LatestVersion;
+            LatestReleaseUrl = info.ReleaseUrl;
+            IsUpdateAvailable = true;
+        }
     }
 
     /// <summary>Multi-line report explaining the current GameData state and per-strata lookups.</summary>
@@ -220,13 +265,9 @@ public partial class MainWindowViewModel : ObservableObject
     public (string? folder, string? error) GetCanonicalSaveFolder()
     {
         if (CurrentMap == null) return (null, "No map loaded.");
-        if (string.IsNullOrWhiteSpace(GameData.GamePath))
-            return (null, "Supreme Commander install not detected — cannot derive a save folder.");
-        var invalid = Path.GetInvalidFileNameChars();
-        var sanitized = string.Concat((CurrentMap.Info.Name ?? "").Where(c => Array.IndexOf(invalid, c) < 0)).Trim();
-        if (string.IsNullOrEmpty(sanitized))
-            return (null, "Map name is empty — set one in the Map Info tab first.");
-        return (Path.Combine(GameData.GamePath!, "maps", sanitized), null);
+        // Pass the editor's MapName (without LOC prefix) — see MapSavePathResolver's class doc for
+        // why this can't read CurrentMap.Info.Name.
+        return MapSavePathResolver.ResolveCanonicalFolder(GameData.GamePath, MapName);
     }
 
     /// <summary>True iff the canonical target folder already exists on disk. The user gets the
@@ -1478,26 +1519,38 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = $"Map scaled to {newSize}×{newSize}";
     }
 
+    /// <summary>When true, symmetry only mirrors heightmap + splatmaps; markers, props, and
+    /// pre-placed units stay where they are. Default off — most symmetry use-cases want the whole
+    /// scene mirrored. Toggle exposed in the Symmetry tab.</summary>
+    [ObservableProperty] private bool _symmetryTerrainOnly;
+
     /// <summary>
-    /// Apply a one-shot symmetry pattern: the chosen source region is replicated into the others,
-    /// overwriting heightmap, splatmaps, markers, props, and per-army pre-placed units.
+    /// Apply a one-shot symmetry pattern: the chosen source region is replicated into the others.
+    /// Mirrors heightmap, splatmaps, and — unless <see cref="SymmetryTerrainOnly"/> is set —
+    /// markers, props, and per-army pre-placed units.
     /// </summary>
     public void ApplySymmetry(SymmetryPattern pattern, SymmetryRegion source)
     {
         if (CurrentMap == null) return;
-        var op = new SymmetryApplyOp(CurrentMap, pattern, source);
+        bool terrainOnly = SymmetryTerrainOnly;
+        var op = new SymmetryApplyOp(CurrentMap, pattern, source, terrainOnly);
         op.Execute();
         UndoRedo.PushExecuted(op);
-        MarkerCount = CurrentMap.Markers.Count;
-        PropCount = CurrentMap.Props.Count;
-        MarkerVersion++;
-        PropVersion++;
+        if (!terrainOnly)
+        {
+            MarkerCount = CurrentMap.Markers.Count;
+            PropCount = CurrentMap.Props.Count;
+            MarkerVersion++;
+            PropVersion++;
+            SelectedMarker = null;
+            SelectedProp = null;
+            SelectedUnitSpawn = null;
+        }
         TexturesVersion++;
         HeightmapVersion++;
-        SelectedMarker = null;
-        SelectedProp = null;
-        SelectedUnitSpawn = null;
-        StatusText = $"Symmetry applied: {pattern} from {source}";
+        StatusText = terrainOnly
+            ? $"Symmetry applied (terrain only): {pattern} from {source}"
+            : $"Symmetry applied: {pattern} from {source}";
     }
 
     /// <summary>Snapshot the current selection into the internal clipboard. No-op if nothing is selected.</summary>
