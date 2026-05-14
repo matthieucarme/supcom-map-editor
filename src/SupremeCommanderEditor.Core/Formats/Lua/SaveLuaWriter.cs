@@ -140,14 +140,38 @@ public static class SaveLuaWriter
         sb.AppendLine($"{indent}        orders = '',");
         sb.AppendLine($"{indent}        platoon = '',");
         sb.AppendLine($"{indent}        Units = {{");
-        sb.AppendLine($"{indent}            ['INITIAL'] = GROUP {{");
-        sb.AppendLine($"{indent}                orders = '',");
-        sb.AppendLine($"{indent}                platoon = '',");
-        sb.AppendLine($"{indent}                Units = {{");
-        foreach (var unit in army.InitialUnits)
-            WriteUnit(sb, unit, indent + "                    ");
-        sb.AppendLine($"{indent}                }},");
-        sb.AppendLine($"{indent}            }},");
+
+        // Emit one GROUP block per distinct Category. SC1 treats the label as a load instruction
+        // ('INITIAL' → live unit, 'WRECKAGE' → pre-destroyed husk), so silently merging everything
+        // into INITIAL would turn vanilla carcasses into functional units on save. We preserve
+        // whatever the reader saw. Empty armies still emit an empty INITIAL block so the engine's
+        // schema check is satisfied.
+        var byCategory = army.InitialUnits
+            .GroupBy(u => string.IsNullOrEmpty(u.Category) ? "INITIAL" : u.Category)
+            .ToList();
+        if (byCategory.Count == 0)
+        {
+            sb.AppendLine($"{indent}            ['INITIAL'] = GROUP {{");
+            sb.AppendLine($"{indent}                orders = '',");
+            sb.AppendLine($"{indent}                platoon = '',");
+            sb.AppendLine($"{indent}                Units = {{");
+            sb.AppendLine($"{indent}                }},");
+            sb.AppendLine($"{indent}            }},");
+        }
+        else
+        {
+            foreach (var group in byCategory)
+            {
+                sb.AppendLine($"{indent}            ['{group.Key}'] = GROUP {{");
+                sb.AppendLine($"{indent}                orders = '',");
+                sb.AppendLine($"{indent}                platoon = '',");
+                sb.AppendLine($"{indent}                Units = {{");
+                foreach (var unit in group)
+                    WriteUnit(sb, unit, indent + "                    ");
+                sb.AppendLine($"{indent}                }},");
+                sb.AppendLine($"{indent}            }},");
+            }
+        }
         sb.AppendLine($"{indent}        }},");
         sb.AppendLine($"{indent}    }},");
         sb.AppendLine($"{indent}    PlatoonBuilders = {{");

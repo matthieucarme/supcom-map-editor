@@ -58,6 +58,8 @@
                             <NumericUpDown x:Name="TeamCountBox" Value="2" Minimum="1" Maximum="8" Increment="1" Width="100" ValueChanged="OnTeamCountChanged"/>
                         </StackPanel>
                         <Grid x:Name="TeamsGrid" Margin="0,8,0,0" RowSpacing="4" ColumnSpacing="6"/>
+                        <TextBlock x:Name="TotalPlayersLabel" Margin="0,6,0,0" FontSize="11"
+                                   Text="Total players: 8 / 8" Foreground="#AAA"/>
                     </StackPanel>
                 </Border>
 

@@ -29,38 +29,74 @@ public static class SaveLuaReader
             var armyName = pair.Key.String;
             var army = pair.Value.Table;
 
-            // Navigate Units → Units → INITIAL → Units
+            // Navigate down to the army's outer Units table. Children of that table represent
+            // spawn categories: 'INITIAL' is the common one, but vanilla maps also use 'WRECKAGE'
+            // (pre-destroyed entities) and free-form 'GROUP_N' wrappers — sometimes mixed at the
+            // same level, sometimes alongside an empty INITIAL. Recursing through all of them is
+            // the only way to recover everything; specifically targeting INITIAL silently dropped
+            // units placed in any other category (e.g. SCMP_022 has 2 buildings under
+            // ARMY_2's 'GROUP_4', sibling of an empty INITIAL).
             var outerUnits = LuaRuntime.GetTable(army, "Units");
             if (outerUnits == null) continue;
             var innerUnits = LuaRuntime.GetTable(outerUnits, "Units");
             if (innerUnits == null) continue;
-            var initial = LuaRuntime.GetTable(innerUnits, "INITIAL");
-            if (initial == null) continue;
-            var units = LuaRuntime.GetTable(initial, "Units");
-            if (units == null) continue;
 
             var list = new List<UnitSpawn>();
-            foreach (var u in units.Pairs)
+            // Each top-level child here is a spawn category (INITIAL, WRECKAGE, GROUP_4, …). We
+            // pass it down so every leaf unit inherits the category of its containing block — the
+            // writer needs that label intact, otherwise wrecks turn into live units on save.
+            foreach (var cat in innerUnits.Pairs)
             {
-                if (u.Key.Type != DataType.String || u.Value.Type != DataType.Table) continue;
-                var t = u.Value.Table;
-                var spawn = new UnitSpawn
-                {
-                    Name = u.Key.String,
-                    BlueprintId = LuaRuntime.GetString(t, "type", ""),
-                    Position = LuaRuntime.GetVector3(t, "Position"),
-                    Orientation = LuaRuntime.GetVector3(t, "Orientation"),
-                };
-                var orders = t.Get("orders");
-                if (orders.Type == DataType.String) spawn.Orders = orders.String;
-                var platoon = t.Get("platoon");
-                if (platoon.Type == DataType.String) spawn.Platoon = platoon.String;
-                list.Add(spawn);
+                if (cat.Key.Type != DataType.String || cat.Value.Type != DataType.Table) continue;
+                var subUnits = LuaRuntime.GetTable(cat.Value.Table, "Units");
+                if (subUnits == null) continue;
+                CollectUnitsRecursively(subUnits, list, cat.Key.String);
             }
             if (list.Count > 0)
                 result[armyName] = list;
         }
         return result;
+    }
+
+    /// <summary>
+    /// Walk a Units table and pull every leaf unit (table with a <c>type</c> field) into the list.
+    /// Vanilla maps nest civilians inside arbitrary GROUP wrappers — e.g. SCMP_022's NEUTRAL_CIVILIAN
+    /// has its 184 units under <c>['GROUP_1'] = GROUP { Units = { ... } }</c>. Without recursion the
+    /// parser would treat GROUP_1 as a single (typeless) unit and silently drop everything else.
+    /// The <paramref name="category"/> argument is propagated from the topmost container name so
+    /// the writer can later emit each unit back under its original INITIAL/WRECKAGE/etc. block.
+    /// </summary>
+    private static void CollectUnitsRecursively(Table container, List<UnitSpawn> sink, string category)
+    {
+        foreach (var u in container.Pairs)
+        {
+            if (u.Key.Type != DataType.String || u.Value.Type != DataType.Table) continue;
+            var t = u.Value.Table;
+
+            // Heuristic: a leaf unit has a 'type' string. A GROUP wrapper has a nested Units table
+            // instead and no type field. Some campaign maps mix both at the same level.
+            var typeVal = t.Get("type");
+            if (typeVal.Type == DataType.String && !string.IsNullOrEmpty(typeVal.String))
+            {
+                var spawn = new UnitSpawn
+                {
+                    Name = u.Key.String,
+                    BlueprintId = typeVal.String,
+                    Position = LuaRuntime.GetVector3(t, "Position"),
+                    Orientation = LuaRuntime.GetVector3(t, "Orientation"),
+                    Category = category,
+                };
+                var orders = t.Get("orders");
+                if (orders.Type == DataType.String) spawn.Orders = orders.String;
+                var platoon = t.Get("platoon");
+                if (platoon.Type == DataType.String) spawn.Platoon = platoon.String;
+                sink.Add(spawn);
+                continue;
+            }
+
+            var nested = LuaRuntime.GetTable(t, "Units");
+            if (nested != null) CollectUnitsRecursively(nested, sink, category);
+        }
     }
 
     public static List<Marker> ReadMarkers(string filePath)

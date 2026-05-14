@@ -356,6 +356,15 @@
                 <TabItem Header="Symmetry">
                     <ScrollViewer>
                         <StackPanel Margin="12" Spacing="14">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <TextBlock Text="Mode:" Foreground="#DDD" VerticalAlignment="Center"/>
+                                <RadioButton GroupName="SymMode" Content="Mirror" IsChecked="{Binding IsSymmetryMirror}"
+                                             Foreground="#DDD"
+                                             ToolTip.Tip="Reflect across the dividing axis — both halves look like a mirror image. A ramp pointing east on one side also points east on the other."/>
+                                <RadioButton GroupName="SymMode" Content="Rotation" IsChecked="{Binding IsSymmetryRotational}"
+                                             Foreground="#DDD"
+                                             ToolTip.Tip="Rotate around the map's center (180° for 2-region patterns, 90° for 4-region). Both players get strictly identical layouts including asymmetric features — the standard symmetry for competitive 1v1 maps."/>
+                            </StackPanel>
                             <CheckBox Content="Terrain only (keep markers, props and pre-placed units in place)"
                                       IsChecked="{Binding SymmetryTerrainOnly}"
                                       Foreground="#DDD"
@@ -369,6 +378,7 @@
                                         <TextBlock DockPanel.Dock="Bottom" Text="Vertical" HorizontalAlignment="Center" Foreground="#CCC"/>
                                         <controls:SymmetryThumbnail x:Name="ThumbV"
                                             Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Mode="{Binding SymmetryMode}"
                                             Height="180"/>
                                     </DockPanel>
                                 </Border>
@@ -377,6 +387,7 @@
                                         <TextBlock DockPanel.Dock="Bottom" Text="Horizontal" HorizontalAlignment="Center" Foreground="#CCC"/>
                                         <controls:SymmetryThumbnail x:Name="ThumbH"
                                             Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Mode="{Binding SymmetryMode}"
                                             Height="180"/>
                                     </DockPanel>
                                 </Border>
@@ -385,6 +396,7 @@
                                         <TextBlock DockPanel.Dock="Bottom" Text="Diagonal ↘" HorizontalAlignment="Center" Foreground="#CCC"/>
                                         <controls:SymmetryThumbnail x:Name="ThumbD1"
                                             Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Mode="{Binding SymmetryMode}"
                                             Height="180"/>
                                     </DockPanel>
                                 </Border>
@@ -393,6 +405,7 @@
                                         <TextBlock DockPanel.Dock="Bottom" Text="Diagonal ↙" HorizontalAlignment="Center" Foreground="#CCC"/>
                                         <controls:SymmetryThumbnail x:Name="ThumbD2"
                                             Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Mode="{Binding SymmetryMode}"
                                             Height="180"/>
                                     </DockPanel>
                                 </Border>
@@ -407,6 +420,7 @@
                                         <TextBlock DockPanel.Dock="Bottom" Text="Cross +" HorizontalAlignment="Center" Foreground="#CCC"/>
                                         <controls:SymmetryThumbnail x:Name="ThumbCross"
                                             Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Mode="{Binding SymmetryMode}"
                                             Height="220"/>
                                     </DockPanel>
                                 </Border>
@@ -415,6 +429,7 @@
                                         <TextBlock DockPanel.Dock="Bottom" Text="Cross ×" HorizontalAlignment="Center" Foreground="#CCC"/>
                                         <controls:SymmetryThumbnail x:Name="ThumbDiag"
                                             Source="{Binding #SkiaViewport.TopDownBackground}"
+                                            Mode="{Binding SymmetryMode}"
                                             Height="220"/>
                                     </DockPanel>
                                 </Border>

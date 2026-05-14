@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -37,6 +38,45 @@ public partial class MapGeneratorDialog : Window
             RebuildTeamsGrid(new List<int> { 4, 4 }, defaultMassPerPlayer: 4);
             RefreshTexturePreview();
         };
+        // Live numeric filter on the seed box. Two layers:
+        //   1. TextInput (tunnel) intercepts each keystroke BEFORE it lands in the buffer and
+        //      cancels it if it would produce a non-digit (allowing one leading '-').
+        //   2. TextChanged is a post-commit safety net for things TextInput doesn't see — paste,
+        //      drag-drop, IME — that still strips any sneaky non-digits.
+        SeedBox.AddHandler(InputElement.TextInputEvent, OnSeedTextInput, RoutingStrategies.Tunnel);
+        SeedBox.TextChanged += OnSeedTextChanged;
+    }
+
+    private void OnSeedTextInput(object? sender, TextInputEventArgs e)
+    {
+        var text = e.Text ?? "";
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (char.IsDigit(c)) continue;
+            // '-' is only valid at position 0, before any existing digit.
+            if (c == '-' && SeedBox.CaretIndex == 0 && !(SeedBox.Text ?? "").StartsWith('-')) continue;
+            e.Handled = true;
+            return;
+        }
+    }
+
+    private void OnSeedTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (SeedBox.Text is null) return;
+        var raw = SeedBox.Text;
+        var sb = new System.Text.StringBuilder(raw.Length);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char c = raw[i];
+            if (char.IsDigit(c)) sb.Append(c);
+            else if (c == '-' && sb.Length == 0) sb.Append(c);
+        }
+        var cleaned = sb.ToString();
+        if (cleaned == raw) return;
+        int caret = SeedBox.CaretIndex;
+        SeedBox.Text = cleaned;
+        SeedBox.CaretIndex = Math.Min(caret, cleaned.Length);
     }
 
     public MapGeneratorDialog(TextureLibraryService library) : this()
@@ -126,8 +166,9 @@ public partial class MapGeneratorDialog : Window
             var players = new NumericUpDown
             {
                 Value = Math.Clamp(sizes[i], 1, 8),
-                Minimum = 1, Maximum = 8, Increment = 1, Width = 90,
+                Minimum = 1, Maximum = 8, Increment = 1, Width = 120,
             };
+            players.ValueChanged += (_, _) => UpdateTotalPlayersLabel();
             Grid.SetRow(players, i); Grid.SetColumn(players, 1);
             TeamsGrid.Children.Add(players);
             _playerBoxes.Add(players);
@@ -147,7 +188,7 @@ public partial class MapGeneratorDialog : Window
             var mass = new NumericUpDown
             {
                 Value = Math.Clamp(massPP, 0, 20),
-                Minimum = 0, Maximum = 20, Increment = 1, Width = 90,
+                Minimum = 0, Maximum = 20, Increment = 1, Width = 120,
             };
             Grid.SetRow(mass, i); Grid.SetColumn(mass, 3);
             TeamsGrid.Children.Add(mass);
@@ -163,14 +204,41 @@ public partial class MapGeneratorDialog : Window
             Grid.SetRow(sep2, i); Grid.SetColumn(sep2, 4);
             TeamsGrid.Children.Add(sep2);
         }
+
+        UpdateTotalPlayersLabel();
     }
 
-    private void OnGenerate(object? sender, RoutedEventArgs e)
+    /// <summary>Refresh the "Total players: N / 8" status line. Goes red over budget so the user
+    /// knows Generate will reject the layout.</summary>
+    private void UpdateTotalPlayersLabel()
+    {
+        if (TotalPlayersLabel == null) return;
+        int total = _playerBoxes.Sum(b => (int)(b.Value ?? 1m));
+        TotalPlayersLabel.Text = $"Total players: {total} / 8";
+        TotalPlayersLabel.Foreground = total > 8
+            ? new SolidColorBrush(Color.FromRgb(0xE0, 0x60, 0x60))
+            : new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
+    }
+
+    private async void OnGenerate(object? sender, RoutedEventArgs e)
     {
         if (!long.TryParse(SeedBox.Text, out long seed))
         {
-            // Fallback: hash the typed string into a seed so even free-text inputs work deterministically.
-            seed = (SeedBox.Text ?? "").GetHashCode();
+            await new InfoDialog("Invalid seed",
+                "The seed must be a number (digits only, optionally with a leading minus sign).\n\n" +
+                "Click '🎲 Random' to fill it in automatically.").ShowDialog(this);
+            return;
+        }
+
+        // Cap total players at 8 — SC1's engine supports 8 player slots max, anything more is
+        // either dropped silently at lobby load or just doesn't make sense on a competitive map.
+        int totalPlayers = _playerBoxes.Sum(b => (int)(b.Value ?? 1m));
+        if (totalPlayers > 8)
+        {
+            await new InfoDialog("Too many players",
+                $"Total players is {totalPlayers}, but SC1 supports at most 8 player slots.\n\n" +
+                "Lower one or more team sizes and try again.").ShowDialog(this);
+            return;
         }
 
         int size = 512;

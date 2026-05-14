@@ -1524,6 +1524,31 @@ public partial class MainWindowViewModel : ObservableObject
     /// scene mirrored. Toggle exposed in the Symmetry tab.</summary>
     [ObservableProperty] private bool _symmetryTerrainOnly;
 
+    /// <summary>Mirror = reflect across the dividing axis (default). Rotational = rotate around
+    /// the map's center (180° for 2-region patterns, 90° chain for 4-region patterns).
+    /// Rotational is the standard symmetry for competitive 1v1 maps because both players get
+    /// strictly identical layouts including asymmetric features.</summary>
+    [ObservableProperty] private SymmetryMode _symmetryMode = SymmetryMode.Mirror;
+
+    /// <summary>Boolean indirection exposed for binding to the Miroir / Rotation radio pair.
+    /// Avalonia's RadioButton.IsChecked is a bool, not the enum.</summary>
+    public bool IsSymmetryMirror
+    {
+        get => SymmetryMode == SymmetryMode.Mirror;
+        set { if (value) SymmetryMode = SymmetryMode.Mirror; }
+    }
+    public bool IsSymmetryRotational
+    {
+        get => SymmetryMode == SymmetryMode.Rotational;
+        set { if (value) SymmetryMode = SymmetryMode.Rotational; }
+    }
+
+    partial void OnSymmetryModeChanged(SymmetryMode value)
+    {
+        OnPropertyChanged(nameof(IsSymmetryMirror));
+        OnPropertyChanged(nameof(IsSymmetryRotational));
+    }
+
     /// <summary>
     /// Apply a one-shot symmetry pattern: the chosen source region is replicated into the others.
     /// Mirrors heightmap, splatmaps, and — unless <see cref="SymmetryTerrainOnly"/> is set —
@@ -1533,7 +1558,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (CurrentMap == null) return;
         bool terrainOnly = SymmetryTerrainOnly;
-        var op = new SymmetryApplyOp(CurrentMap, pattern, source, terrainOnly);
+        var op = new SymmetryApplyOp(CurrentMap, pattern, source, SymmetryMode, terrainOnly);
         op.Execute();
         UndoRedo.PushExecuted(op);
         if (!terrainOnly)
@@ -1549,8 +1574,8 @@ public partial class MainWindowViewModel : ObservableObject
         TexturesVersion++;
         HeightmapVersion++;
         StatusText = terrainOnly
-            ? $"Symmetry applied (terrain only): {pattern} from {source}"
-            : $"Symmetry applied: {pattern} from {source}";
+            ? $"Symmetry applied (terrain only, {SymmetryMode}): {pattern} from {source}"
+            : $"Symmetry applied ({SymmetryMode}): {pattern} from {source}";
     }
 
     /// <summary>Snapshot the current selection into the internal clipboard. No-op if nothing is selected.</summary>

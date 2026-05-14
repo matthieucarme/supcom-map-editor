@@ -14,6 +14,20 @@ public enum SymmetryPattern
     QuadDiagonals    // both diagonals → 4 triangles (N/E/S/W)
 }
 
+/// <summary>How the source region is propagated into the others.</summary>
+public enum SymmetryMode
+{
+    /// <summary>Reflect across the dividing axis. Both regions read as a mirror image — a ramp
+    /// pointing east in the source half also points east in the mirrored half.</summary>
+    Mirror,
+    /// <summary>Rotate around the map's center. For 2-region patterns this is a 180° rotation
+    /// (a ramp pointing east becomes a ramp pointing west on the other side). For 4-region
+    /// patterns it's a 4-fold rotation (each region is the previous one turned 90°). This is the
+    /// standard symmetry for competitive maps because both players get strictly identical layouts
+    /// including asymmetric features.</summary>
+    Rotational,
+}
+
 /// <summary>
 /// Region of a map under a symmetry pattern. Interpretation depends on the pattern:
 ///   Vertical:        Left=0, Right=1
@@ -68,10 +82,13 @@ public static class SymmetryService
     /// <summary>
     /// Given a destination point (u,v) and the chosen source region, return the source point
     /// in [0,1]² whose value should be copied to (u,v). For points already in the source region
-    /// this is the identity.
+    /// this is the identity. Used by the per-pixel warp of heightmap and splatmaps.
     /// </summary>
-    public static (float u, float v) SourceOf(SymmetryPattern p, SymmetryRegion source, float u, float v)
+    public static (float u, float v) SourceOf(SymmetryPattern p, SymmetryRegion source, float u, float v, SymmetryMode mode = SymmetryMode.Mirror)
     {
+        if (mode == SymmetryMode.Rotational)
+            return RotationalSourceOf(p, source, u, v);
+
         return p switch
         {
             SymmetryPattern.Vertical => source switch
@@ -90,6 +107,86 @@ public static class SymmetryService
             SymmetryPattern.QuadDiagonals => QuadDiag(u, v, source),
             _ => (u, v),
         };
+    }
+
+    /// <summary>
+    /// Forward map: given a seed at (u,v) inside the source region, return where it lands in the
+    /// destination region. For mirror symmetry the inverse is its own forward (involution), so we
+    /// can reuse <see cref="SourceOf"/>. For rotational symmetry the 90° chain is NOT involutive,
+    /// so we need the proper forward transform here.
+    /// </summary>
+    public static (float u, float v) DestOf(SymmetryPattern p, SymmetryRegion source, SymmetryRegion dest, float u, float v, SymmetryMode mode = SymmetryMode.Mirror)
+    {
+        if (mode == SymmetryMode.Mirror)
+            return SourceOf(p, dest, u, v, SymmetryMode.Mirror);
+        return RotationalDestOf(p, source, dest, u, v);
+    }
+
+    /// <summary>Source-of mapping under rotational mode (backward direction).</summary>
+    private static (float u, float v) RotationalSourceOf(SymmetryPattern p, SymmetryRegion source, float u, float v)
+    {
+        var current = RegionOf(p, u, v);
+        if (current == source) return (u, v);
+
+        if (RegionCount(p) == 2)
+        {
+            // 180° rotation is its own inverse — same formula regardless of the dividing axis.
+            return (1f - u, 1f - v);
+        }
+
+        // 4-fold rotation: the forward map takes (source→current) in N CW steps, so the inverse
+        // takes (current→source) in N CCW steps. N = chain_order(current) - chain_order(source).
+        int steps = (ChainOrder(p, current) - ChainOrder(p, source) + 4) % 4;
+        return Rotate90CCW(u, v, steps);
+    }
+
+    /// <summary>Forward map under rotational mode (seed in source → corresponding point in dest).</summary>
+    private static (float u, float v) RotationalDestOf(SymmetryPattern p, SymmetryRegion source, SymmetryRegion dest, float u, float v)
+    {
+        if (source == dest) return (u, v);
+
+        if (RegionCount(p) == 2)
+        {
+            // 180° rotation is its own inverse — forward and backward are identical.
+            return (1f - u, 1f - v);
+        }
+
+        // 4-fold rotation: CW steps from `source` to `dest`.
+        int steps = (ChainOrder(p, dest) - ChainOrder(p, source) + 4) % 4;
+        return Rotate90CW(u, v, steps);
+    }
+
+    /// <summary>Position of a region in the clockwise rotation chain used by 4-fold rotational
+    /// symmetry. QuadDiagonals enum is already in CW order (N=0, E=1, S=2, W=3); QuadCross needs a
+    /// re-map because its enum has TL=0, TR=1, BL=2, BR=3 but the CW chain is TL→TR→BR→BL.</summary>
+    private static int ChainOrder(SymmetryPattern p, SymmetryRegion r)
+    {
+        if (p == SymmetryPattern.QuadCross)
+        {
+            return r switch
+            {
+                SymmetryRegion.R0 => 0, // TL
+                SymmetryRegion.R1 => 1, // TR
+                SymmetryRegion.R3 => 2, // BR
+                SymmetryRegion.R2 => 3, // BL
+                _ => 0,
+            };
+        }
+        return (int)r;
+    }
+
+    private static (float u, float v) Rotate90CW(float u, float v, int steps)
+    {
+        // 90° CW around center (0.5, 0.5): (u, v) → (1 - v, u)
+        for (int i = 0; i < steps; i++) (u, v) = (1f - v, u);
+        return (u, v);
+    }
+
+    private static (float u, float v) Rotate90CCW(float u, float v, int steps)
+    {
+        // 90° CCW around center: (u, v) → (v, 1 - u)
+        for (int i = 0; i < steps; i++) (u, v) = (v, 1f - u);
+        return (u, v);
     }
 
     private static (float, float) DiagTLBR(float u, float v, SymmetryRegion src)
@@ -163,24 +260,24 @@ public static class SymmetryService
     /// <summary>Mirror just the heightmap + splatmaps. Used by the procedural map generator where
     /// markers are already placed correctly per the team configuration — calling the full Apply
     /// would wipe one team's spawns and replace them with mirrors of the other (breaks 2v6 etc.).</summary>
-    public static void ApplyTerrainOnly(ScMap map, SymmetryPattern pattern, SymmetryRegion source)
+    public static void ApplyTerrainOnly(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror)
     {
-        MirrorHeightmap(map.Heightmap, pattern, source);
-        MirrorSplatmap(map.TextureMaskLow, pattern, source);
-        MirrorSplatmap(map.TextureMaskHigh, pattern, source);
+        MirrorHeightmap(map.Heightmap, pattern, source, mode);
+        MirrorSplatmap(map.TextureMaskLow, pattern, source, mode);
+        MirrorSplatmap(map.TextureMaskHigh, pattern, source, mode);
     }
 
-    public static void Apply(ScMap map, SymmetryPattern pattern, SymmetryRegion source)
+    public static void Apply(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror)
     {
-        MirrorHeightmap(map.Heightmap, pattern, source);
-        MirrorSplatmap(map.TextureMaskLow, pattern, source);
-        MirrorSplatmap(map.TextureMaskHigh, pattern, source);
-        MirrorMarkers(map, pattern, source);
-        MirrorProps(map, pattern, source);
-        MirrorUnitSpawns(map, pattern, source);
+        MirrorHeightmap(map.Heightmap, pattern, source, mode);
+        MirrorSplatmap(map.TextureMaskLow, pattern, source, mode);
+        MirrorSplatmap(map.TextureMaskHigh, pattern, source, mode);
+        MirrorMarkers(map, pattern, source, mode);
+        MirrorProps(map, pattern, source, mode);
+        MirrorUnitSpawns(map, pattern, source, mode);
     }
 
-    private static void MirrorHeightmap(Heightmap hm, SymmetryPattern pattern, SymmetryRegion source)
+    private static void MirrorHeightmap(Heightmap hm, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode)
     {
         int w = hm.Width;
         int h = hm.Height;
@@ -193,7 +290,7 @@ public static class SymmetryService
             {
                 float u = (float)x / w;
                 float v = (float)y / h;
-                var (su, sv) = SourceOf(pattern, source, u, v);
+                var (su, sv) = SourceOf(pattern, source, u, v, mode);
                 int sx = (int)MathF.Round(su * w);
                 int sy = (int)MathF.Round(sv * h);
                 sx = Math.Clamp(sx, 0, w);
@@ -203,7 +300,7 @@ public static class SymmetryService
         }
     }
 
-    private static void MirrorSplatmap(TextureMask mask, SymmetryPattern pattern, SymmetryRegion source)
+    private static void MirrorSplatmap(TextureMask mask, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode)
     {
         // Raw ARGB DDS: 128-byte header then W*H*4 pixel bytes
         if (mask.DdsData.Length <= 128 || mask.Width <= 0 || mask.Height <= 0) return;
@@ -223,7 +320,7 @@ public static class SymmetryService
             for (int x = 0; x < w; x++)
             {
                 float u = (x + 0.5f) / w;
-                var (su, sv) = SourceOf(pattern, source, u, v);
+                var (su, sv) = SourceOf(pattern, source, u, v, mode);
                 int sx = Math.Clamp((int)MathF.Floor(su * w), 0, w - 1);
                 int sy = Math.Clamp((int)MathF.Floor(sv * h), 0, h - 1);
                 int srcIdx = (sy * w + sx) * 4;
@@ -236,23 +333,23 @@ public static class SymmetryService
         }
     }
 
-    private static void MirrorMarkers(ScMap map, SymmetryPattern pattern, SymmetryRegion source) =>
+    private static void MirrorMarkers(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode) =>
         MirrorEntities(
-            map, map.Markers, pattern, source,
+            map, map.Markers, pattern, source, mode,
             getPos: m => m.Position,
             setPos: (m, p) => m.Position = p,
             clone: CloneMarker,
             renameForRegion: (m, _, list) => m.Name = MakeUniqueMarkerName(m.Name, list));
 
-    private static void MirrorProps(ScMap map, SymmetryPattern pattern, SymmetryRegion source) =>
+    private static void MirrorProps(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode) =>
         MirrorEntities(
-            map, map.Props, pattern, source,
+            map, map.Props, pattern, source, mode,
             getPos: p => p.Position,
             setPos: (p, v) => p.Position = v,
             clone: CloneProp,
             renameForRegion: null);
 
-    private static void MirrorUnitSpawns(ScMap map, SymmetryPattern pattern, SymmetryRegion source)
+    private static void MirrorUnitSpawns(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode)
     {
         // Each army owns its own InitialUnits list; mirror within each list independently so
         // names stay unique per army (UNIT_N) and ownership is preserved.
@@ -260,7 +357,7 @@ public static class SymmetryService
         {
             var list = army.InitialUnits;
             MirrorEntities(
-                map, list, pattern, source,
+                map, list, pattern, source, mode,
                 getPos: u => u.Position,
                 setPos: (u, p) => u.Position = p,
                 clone: CloneUnitSpawn,
@@ -274,7 +371,7 @@ public static class SymmetryService
     /// </summary>
     private static void MirrorEntities<T>(
         ScMap map, List<T> entities,
-        SymmetryPattern pattern, SymmetryRegion source,
+        SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode,
         Func<T, Vector3> getPos,
         Action<T, Vector3> setPos,
         Func<T, T> clone,
@@ -303,7 +400,8 @@ public static class SymmetryService
         foreach (var seed in seeds)
             entities.Add(clone(seed));
 
-        // Step 2: mirror into every other region.
+        // Step 2: forward-mirror into every other region. Mirror mode reuses SourceOf via DestOf's
+        // involution shortcut; rotational mode goes through the proper 90°-chain forward map.
         int regions = RegionCount(pattern);
         for (int r = 0; r < regions; r++)
         {
@@ -316,9 +414,7 @@ public static class SymmetryService
                 var p = getPos(seed);
                 float u = w > 0 ? p.X / w : 0.5f;
                 float v = h > 0 ? p.Z / h : 0.5f;
-                // Transforms are involutions, so SourceOf(pattern, region, seedPoint) sends us to
-                // the corresponding point in `region`.
-                var (du, dv) = SourceOf(pattern, region, u, v);
+                var (du, dv) = DestOf(pattern, source, region, u, v, mode);
                 setPos(copy, new Vector3(du * w, p.Y, dv * h));
                 renameForRegion?.Invoke(copy, region, entities);
                 entities.Add(copy);

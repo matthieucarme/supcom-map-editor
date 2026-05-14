@@ -13,6 +13,7 @@ public class SymmetryApplyOp : IMapOperation
     private readonly ScMap _map;
     private readonly SymmetryPattern _pattern;
     private readonly SymmetryRegion _source;
+    private readonly SymmetryMode _mode;
     private readonly bool _terrainOnly;
 
     private ushort[]? _prevHeightmap;
@@ -23,17 +24,18 @@ public class SymmetryApplyOp : IMapOperation
     private Dictionary<Army, List<UnitSpawn>>? _prevUnits;
 
     public string Description => _terrainOnly
-        ? $"Symmetry {_pattern} terrain ({_source})"
-        : $"Symmetry {_pattern} ({_source})";
+        ? $"Symmetry {_pattern} ({_mode}) terrain ({_source})"
+        : $"Symmetry {_pattern} ({_mode}) ({_source})";
 
     /// <param name="terrainOnly">When true, only the heightmap and splatmaps are mirrored;
     /// markers, props, and per-army pre-placed units stay where they are. Useful for refining a
     /// generated map's terrain without scrambling the already-balanced spawn layout.</param>
-    public SymmetryApplyOp(ScMap map, SymmetryPattern pattern, SymmetryRegion source, bool terrainOnly = false)
+    public SymmetryApplyOp(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror, bool terrainOnly = false)
     {
         _map = map;
         _pattern = pattern;
         _source = source;
+        _mode = mode;
         _terrainOnly = terrainOnly;
     }
 
@@ -47,14 +49,14 @@ public class SymmetryApplyOp : IMapOperation
 
         if (_terrainOnly)
         {
-            SymmetryService.ApplyTerrainOnly(_map, _pattern, _source);
+            SymmetryService.ApplyTerrainOnly(_map, _pattern, _source, _mode);
         }
         else
         {
             _prevMarkers = [.._map.Markers];
             _prevProps = [.._map.Props];
             _prevUnits = _map.Info.Armies.ToDictionary(a => a, a => a.InitialUnits.ToList());
-            SymmetryService.Apply(_map, _pattern, _source);
+            SymmetryService.Apply(_map, _pattern, _source, _mode);
         }
     }
 
