@@ -33,11 +33,13 @@ public static class UpdateCheckService
 
     /// <summary>Fetch the latest release tag from GitHub and compare to <paramref name="currentVersion"/>.
     /// Always returns a value — network errors collapse to <c>IsUpdateAvailable=false</c>.</summary>
-    public static async Task<UpdateInfo> CheckAsync(string currentVersion, CancellationToken ct = default)
+    /// <param name="apiUrl">Override for the latest-release endpoint. Defaults to the project's
+    /// GitHub repo. Exposed for tests that exercise the offline / unreachable-host path.</param>
+    public static async Task<UpdateInfo> CheckAsync(string currentVersion, CancellationToken ct = default, string? apiUrl = null)
     {
         try
         {
-            using var resp = await _client.Value.GetAsync(LatestReleaseApi, ct).ConfigureAwait(false);
+            using var resp = await _client.Value.GetAsync(apiUrl ?? LatestReleaseApi, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
                 return new UpdateInfo(false, currentVersion, "", "");
 

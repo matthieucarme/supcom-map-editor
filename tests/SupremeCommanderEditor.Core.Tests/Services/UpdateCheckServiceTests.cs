@@ -42,4 +42,29 @@ public class UpdateCheckServiceTests
         // based on noise.
         Assert.False(UpdateCheckService.IsNewer(latest, current));
     }
+
+    [Fact]
+    public async Task CheckAsync_DoesNotThrow_WhenHostUnreachable()
+    {
+        // Offline regression: an unresolvable host triggers HttpRequestException deep in
+        // HttpClient. CheckAsync must swallow it and return a no-update result rather than crash
+        // the app at startup (it's called fire-and-forget from the VM constructor).
+        // .invalid is RFC 2606-reserved and guaranteed not to resolve.
+        var result = await UpdateCheckService.CheckAsync(
+            "1.0.0",
+            apiUrl: "http://this-host-is-not-supposed-to-exist.invalid/");
+        Assert.False(result.IsUpdateAvailable);
+        Assert.Equal("1.0.0", result.CurrentVersion);
+    }
+
+    [Fact]
+    public async Task CheckAsync_DoesNotThrow_WhenCancelled()
+    {
+        // Same guarantee on a cancelled token: TaskCanceledException must not leak. The VM does
+        // not control cancellation today, but the contract should hold so future callers can.
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var result = await UpdateCheckService.CheckAsync("1.0.0", cts.Token);
+        Assert.False(result.IsUpdateAvailable);
+    }
 }
