@@ -228,6 +228,26 @@ public class SkiaMapControl : Panel
     }
 
     /// <summary>Rebuild the heightmap bitmap from current data (after terrain editing).</summary>
+    /// <summary>Render the current background (top-down 3D snapshot if available, height-coloured
+    /// fallback otherwise) to a 256×256 PNG. Used by the share dialog to attach a thumbnail when
+    /// uploading. Returns null if no map is loaded.</summary>
+    public byte[]? CaptureThumbnailPng(int size = 256)
+    {
+        if (_map == null || _heightmapBitmap == null) return null;
+
+        using var thumb = new SKBitmap(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using (var canvas = new SKCanvas(thumb))
+        {
+            canvas.Clear(SKColors.Black);
+            using var paint = new SKPaint { IsAntialias = true, FilterQuality = SKFilterQuality.High };
+            // Stretch the source bitmap into a square — SC maps are square, so no aspect-ratio
+            // issue. If non-square maps ever appear, we'd letterbox here.
+            canvas.DrawBitmap(_heightmapBitmap, new SKRect(0, 0, size, size), paint);
+        }
+        using var data = thumb.Encode(SKEncodedImageFormat.Png, 90);
+        return data.ToArray();
+    }
+
     public void RefreshHeightmap()
     {
         if (_map == null) return;

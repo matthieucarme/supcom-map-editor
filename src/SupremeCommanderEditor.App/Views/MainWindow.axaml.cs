@@ -406,6 +406,12 @@ public partial class MainWindow : Window
             || basename.StartsWith("macroice", StringComparison.OrdinalIgnoreCase);
     }
 
+    private async void OnShareMaps(object? sender, RoutedEventArgs e)
+    {
+        var dlg = new MapShareDialog(Vm, SkiaViewport);
+        await dlg.ShowDialog(this);
+    }
+
     private async void OnGenerateMap(object? sender, RoutedEventArgs e)
     {
         var library = Vm.GetTextureLibrary();

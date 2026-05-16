@@ -10,6 +10,16 @@ public class AppSettingsService
 {
     public string? GameInstallPath { get; set; }
 
+    /// <summary>Path to a shared folder (e.g. a synced GDrive folder) that acts as a "remote" for
+    /// map sharing between users. Maps live as one folder per map, each carrying a metadata.json
+    /// and a thumbnail.png alongside the 4 SC files. Null/empty disables sharing features.</summary>
+    public string? RemoteMapsPath { get; set; }
+
+    /// <summary>Handle written into uploaded map metadata as the <c>author</c> field. Lets other
+    /// users see who published each map. Defaults to <see cref="Environment.UserName"/> on first
+    /// upload if the user hasn't set anything.</summary>
+    public string? AuthorHandle { get; set; }
+
     private static string SettingsPath => GetPath();
 
     public static string GetPath()

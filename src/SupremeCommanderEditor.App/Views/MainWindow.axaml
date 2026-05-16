@@ -79,6 +79,8 @@
                 <Separator/>
                 <MenuItem Header="_Save" Click="OnSaveMap" IsEnabled="{Binding HasMap}"/>
                 <Separator/>
+                <MenuItem Header="S_hare maps…" Click="OnShareMaps"/>
+                <Separator/>
                 <MenuItem Header="E_xit" Click="OnExit"/>
             </MenuItem>
             <MenuItem Header="_Edit">
@@ -564,6 +566,18 @@
                                            Foreground="#FFF" HorizontalAlignment="Center"/>
                                 <TextBlock Text="Procedural generator — pick a seed, biome and team setup"
                                            FontSize="11" Foreground="#CCC" TextWrapping="Wrap"
+                                           HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="160"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="200" Height="280" Click="OnShareMaps"
+                                Background="#2A3030" BorderBrush="#3A4040" BorderThickness="1"
+                                Padding="16" Cursor="Hand">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                                <TextBlock Text="📤" FontSize="80" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Share maps" FontSize="17" FontWeight="Bold"
+                                           Foreground="#EEE" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Browse, download, and publish maps via a shared folder"
+                                           FontSize="11" Foreground="#999" TextWrapping="Wrap"
                                            HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="160"/>
                             </StackPanel>
                         </Button>
