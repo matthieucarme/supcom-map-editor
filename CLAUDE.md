@@ -371,7 +371,9 @@ Preview on the 2D — two extra visual affordances:
 icon side), otherwise a constant 6f. Used everywhere (click selection, hover, drag detection).
 
 **Selection takes priority over placement**: with a menu entry selected, a left click on an
-existing element selects it instead of placing on top. **Ctrl+click** forces placement on top.
+existing element selects it instead of placing on top — there's no longer a modifier to force
+placement over an element (use Esc to drop the menu entry, then place freely). Ctrl and Shift
+are reserved for multi-selection (see the 2D controls section below).
 **Esc** clears the current menu entry and category (back to plain selection mode).
 
 Placement:
@@ -545,16 +547,20 @@ Manual fallback: build locally, drag-drop the artifacts on github.com/.../releas
 - **Left click**: selection (priority marker > prop > UnitSpawn) or placement (if a menu entry is
   selected in the prop menu)
 - **Left-click drag** on a marker / prop / UnitSpawn already selected: move (undoable)
-- **Shift + left-click drag**: box selection multi-props (blue rectangle)
+- **Shift + left-click drag**: box selection (cumulative — each Shift+drag adds to the existing
+  multi-selection instead of replacing it).
+- **Shift + click** on a marker / prop / unit: add every similar element (same MarkerType /
+  BlueprintPath / BlueprintId) to the multi-selection. Cumulative with prior selection.
+- **Ctrl + click** on a marker / prop / unit: select every similar element (replaces any prior
+  selection). Same similarity rule as Shift+click; Shift accumulates, Ctrl replaces.
 - **Right / middle click**: pan
 - **Wheel**: zoom — above `_zoom >= 4.5`, props and UnitSpawn render as their SC icon instead of
   dot/square
 - **Hover**: popup with icon + name of the prop or unit under the cursor
 - **Ctrl+C / Ctrl+V**: copy / paste of the selected marker or prop (paste = cursor position)
-- **Ctrl+click**: forces placement (with a menu entry selected) on top of an existing element
 - **Esc**: clears the prop menu entry + current category
-- **Delete**: deletes the selection (multi-prop if any, otherwise the selected marker)
-- Top bar: toggles `Grid` / `Diagonals` / `Snap` + `Step` + `Brush mode` toggle + Size/Density sliders
+- **Delete**: deletes the selection (multi-selection if any, otherwise the singly-selected element)
+- Top bar: toggles `Grid` / `Diagonals` / `Buildable` / `Snap` + `Step` + `Brush mode` toggle + Size/Density sliders
 - Bottom bar (2-level prop menu): categories (Rocks/Trees/Bushes/Logs/Wreckage/UEF/Cybran/Aeon/
   Seraphim/Civilians/Other Units) then individual items with their SC icon. Yellow border on
   selection.

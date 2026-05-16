@@ -14,6 +14,9 @@ public class SkiaMapControl : Panel
     private ScMap? _map;
     private SKBitmap? _heightmapBitmap;
     private WriteableBitmap? _avaloniaBuffer;
+    // Buildable-cell mask (1 byte/cell) and its rendered SKBitmap. Lazily built on first
+    // overlay draw and invalidated whenever the map or heightmap changes.
+    private SKBitmap? _buildableBitmap;
 
     /// <summary>Optional service that resolves marker icons from game data; null = use vector fallback.</summary>
     public MarkerIconService? MarkerIcons { get; set; }
@@ -44,6 +47,12 @@ public class SkiaMapControl : Panel
     public static readonly StyledProperty<string?> HoveredPropNameProperty =
         AvaloniaProperty.Register<SkiaMapControl, string?>(nameof(HoveredPropName));
     public string? HoveredPropName { get => GetValue(HoveredPropNameProperty); set => SetValue(HoveredPropNameProperty, value); }
+
+    public static readonly StyledProperty<string?> HoveredPropDescriptionProperty =
+        AvaloniaProperty.Register<SkiaMapControl, string?>(nameof(HoveredPropDescription));
+    /// <summary>Optional extra line under <see cref="HoveredPropName"/> in the hover popup.
+    /// Set for markers (role/purpose hint), empty for props/units where the name says it all.</summary>
+    public string? HoveredPropDescription { get => GetValue(HoveredPropDescriptionProperty); set => SetValue(HoveredPropDescriptionProperty, value); }
 
     public static readonly StyledProperty<bool> HasHoveredPropProperty =
         AvaloniaProperty.Register<SkiaMapControl, bool>(nameof(HasHoveredProp));
@@ -160,6 +169,8 @@ public class SkiaMapControl : Panel
         AvaloniaProperty.Register<SkiaMapControl, bool>(nameof(ShowGrid), defaultValue: true);
     public static readonly StyledProperty<bool> ShowDiagonalGridProperty =
         AvaloniaProperty.Register<SkiaMapControl, bool>(nameof(ShowDiagonalGrid));
+    public static readonly StyledProperty<bool> ShowBuildableOverlayProperty =
+        AvaloniaProperty.Register<SkiaMapControl, bool>(nameof(ShowBuildableOverlay));
     public static readonly StyledProperty<int> GridStepProperty =
         AvaloniaProperty.Register<SkiaMapControl, int>(nameof(GridStep), defaultValue: 32);
     public static readonly StyledProperty<bool> SnapToGridProperty =
@@ -167,6 +178,7 @@ public class SkiaMapControl : Panel
 
     public bool ShowGrid { get => GetValue(ShowGridProperty); set => SetValue(ShowGridProperty, value); }
     public bool ShowDiagonalGrid { get => GetValue(ShowDiagonalGridProperty); set => SetValue(ShowDiagonalGridProperty, value); }
+    public bool ShowBuildableOverlay { get => GetValue(ShowBuildableOverlayProperty); set => SetValue(ShowBuildableOverlayProperty, value); }
     public int GridStep { get => GetValue(GridStepProperty); set => SetValue(GridStepProperty, value); }
     public bool SnapToGrid { get => GetValue(SnapToGridProperty); set => SetValue(SnapToGridProperty, value); }
 
@@ -191,6 +203,7 @@ public class SkiaMapControl : Panel
         MapProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.OnMapChanged());
         ShowGridProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.RedrawBitmap());
         ShowDiagonalGridProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.RedrawBitmap());
+        ShowBuildableOverlayProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.RedrawBitmap());
         GridStepProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.RedrawBitmap());
         IsPropBrushActiveProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.RedrawBitmap());
         PropBrushRadiusProperty.Changed.AddClassHandler<SkiaMapControl>((c, _) => c.RedrawBitmap());
@@ -202,6 +215,8 @@ public class SkiaMapControl : Panel
         _heightmapBitmap?.Dispose();
         _heightmapBitmap = null;
         _hasTopDownSnapshot = false;
+        _buildableBitmap?.Dispose();
+        _buildableBitmap = null;
 
         if (_map != null)
         {
@@ -223,6 +238,10 @@ public class SkiaMapControl : Panel
             _heightmapBitmap?.Dispose();
             BuildHeightmapBitmap(_map.Heightmap);
         }
+        // The buildable mask depends on the heightmap geometry — invalidate so the next overlay
+        // draw recomputes it from the new heights.
+        _buildableBitmap?.Dispose();
+        _buildableBitmap = null;
         RedrawBitmap();
     }
 
@@ -340,6 +359,7 @@ public class SkiaMapControl : Panel
         var destRect = new SKRect(0, 0, _map.Heightmap.Width, _map.Heightmap.Height);
         canvas.DrawBitmap(_heightmapBitmap, destRect);
 
+        DrawBuildableOverlay(canvas);
         DrawProps(canvas);
         DrawInitialUnits(canvas);
         DrawMarkers(canvas);
@@ -554,9 +574,9 @@ public class SkiaMapControl : Panel
     /// Props, markers (subject to MarkerFilter), and pre-placed units are all captured.</summary>
     private void FinalizeBoxSelection()
     {
-        _multiSelectedProps.Clear();
-        _multiSelectedMarkers.Clear();
-        _multiSelectedUnits.Clear();
+        // Additive: each Shift+drag accumulates into the existing multi-selection rather than
+        // replacing it, so the user can pick a few props on one slope, then add a few more from
+        // another box without losing the first batch. Escape clears the lot.
         if (_map == null) { MultiSelectionChanged?.Invoke(); return; }
         var (x0, y0) = ScreenToMap(new Point(
             Math.Min(_boxStartScreen.X, _boxEndScreen.X),
@@ -595,6 +615,109 @@ public class SkiaMapControl : Panel
             _selectedUnitSpawn = null;
         }
         MultiSelectionChanged?.Invoke();
+    }
+
+    /// <summary>Ctrl+click selects every element similar to the one under the cursor. "Similar"
+    /// means same MarkerType for markers, same BlueprintPath for props, same BlueprintId for
+    /// units. The result populates the multi-selection so Delete / drag / panel actions apply
+    /// to the whole batch. Returns true if at least one similar element was found.</summary>
+    public bool SelectAllSimilarAt(float mx, float mz)
+    {
+        if (_map == null) return false;
+
+        _multiSelectedProps.Clear();
+        _multiSelectedMarkers.Clear();
+        _multiSelectedUnits.Clear();
+        _selectedMarker = null;
+        _selectedProp = null;
+        _selectedUnitSpawn = null;
+
+        // Marker > prop > unit (matches the click selection precedence elsewhere).
+        var marker = HitTestMarker(mx, mz);
+        if (marker != null)
+        {
+            foreach (var m in _map.Markers)
+            {
+                if (MarkerFilter != null && !MarkerFilter(m)) continue;
+                if (m.Type == marker.Type) _multiSelectedMarkers.Add(m);
+            }
+        }
+        else
+        {
+            var prop = HitTestProp(mx, mz);
+            if (prop != null)
+            {
+                foreach (var p in _map.Props)
+                    if (string.Equals(p.BlueprintPath, prop.BlueprintPath, StringComparison.OrdinalIgnoreCase))
+                        _multiSelectedProps.Add(p);
+            }
+            else
+            {
+                var unit = HitTestUnitSpawn(mx, mz);
+                if (unit != null)
+                {
+                    foreach (var army in _map.Info.Armies)
+                        foreach (var u in army.InitialUnits)
+                            if (string.Equals(u.BlueprintId, unit.BlueprintId, StringComparison.OrdinalIgnoreCase))
+                                _multiSelectedUnits.Add(u);
+                }
+            }
+        }
+
+        MultiSelectionChanged?.Invoke();
+        RedrawBitmap();
+        return HasMultiSelection;
+    }
+
+    /// <summary>Shift+click handler: add every element similar to the one under the cursor to
+    /// the multi-selection (without clearing it). Similarity = same MarkerType / BlueprintPath
+    /// / BlueprintId, matching the Ctrl+click rule — Shift differs only in being additive
+    /// (Ctrl replaces, Shift accumulates). Precedence matches single-select: marker > prop >
+    /// unit. If a single selection was active beforehand, it's also promoted into the
+    /// multi-selection so the previous focus stays grouped with the new pick.</summary>
+    public bool AddClickedToMultiSelection(float mx, float mz)
+    {
+        if (_map == null) return false;
+
+        var marker = HitTestMarker(mx, mz);
+        var prop = marker == null ? HitTestProp(mx, mz) : null;
+        var unit = (marker == null && prop == null) ? HitTestUnitSpawn(mx, mz) : null;
+        if (marker == null && prop == null && unit == null) return false;
+
+        // Promote whatever was singly selected before this click — otherwise the previous focus
+        // would silently disappear when entering multi-selection mode.
+        if (_selectedMarker != null) _multiSelectedMarkers.Add(_selectedMarker);
+        if (_selectedProp != null) _multiSelectedProps.Add(_selectedProp);
+        if (_selectedUnitSpawn != null) _multiSelectedUnits.Add(_selectedUnitSpawn);
+        _selectedMarker = null;
+        _selectedProp = null;
+        _selectedUnitSpawn = null;
+
+        if (marker != null)
+        {
+            foreach (var m in _map.Markers)
+            {
+                if (MarkerFilter != null && !MarkerFilter(m)) continue;
+                if (m.Type == marker.Type) _multiSelectedMarkers.Add(m);
+            }
+        }
+        else if (prop != null)
+        {
+            foreach (var p in _map.Props)
+                if (string.Equals(p.BlueprintPath, prop.BlueprintPath, StringComparison.OrdinalIgnoreCase))
+                    _multiSelectedProps.Add(p);
+        }
+        else if (unit != null)
+        {
+            foreach (var army in _map.Info.Armies)
+                foreach (var u in army.InitialUnits)
+                    if (string.Equals(u.BlueprintId, unit.BlueprintId, StringComparison.OrdinalIgnoreCase))
+                        _multiSelectedUnits.Add(u);
+        }
+
+        MultiSelectionChanged?.Invoke();
+        RedrawBitmap();
+        return true;
     }
 
     /// <summary>Wipe the multi-selection (all types). Called by the host after delete/escape.</summary>
@@ -1003,6 +1126,53 @@ public class SkiaMapControl : Panel
         c.DrawPath(path, stroke);
     }
 
+    /// <summary>Tint each build-grid cell green (buildable) or red (unbuildable for a big
+    /// building — too steep or underwater). The mask is computed once per heightmap edit and
+    /// cached as an SKBitmap so redraws are a single DrawBitmap call.</summary>
+    private void DrawBuildableOverlay(SKCanvas canvas)
+    {
+        if (_map == null || !ShowBuildableOverlay) return;
+
+        int w = _map.Heightmap.Width;
+        int h = _map.Heightmap.Height;
+
+        if (_buildableBitmap == null || _buildableBitmap.Width != w || _buildableBitmap.Height != h)
+        {
+            _buildableBitmap?.Dispose();
+            var mask = SupremeCommanderEditor.Core.Services.BuildableService.ComputeMask(_map);
+            _buildableBitmap = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
+            // Pre-multiplied alpha. Cell-aligned 1×1 pixels — canvas scaling stretches the image
+            // to world-space so each pixel matches one build cell exactly.
+            // Green ~80 alpha, red ~110 alpha (red reads more clearly against earthy biomes).
+            unsafe
+            {
+                byte* dst = (byte*)_buildableBitmap.GetPixels().ToPointer();
+                for (int i = 0; i < mask.Length; i++)
+                {
+                    if (mask[i] == 0)
+                    {
+                        // green
+                        dst[i * 4 + 0] = 0;     // R
+                        dst[i * 4 + 1] = 50;    // G
+                        dst[i * 4 + 2] = 0;     // B
+                        dst[i * 4 + 3] = 80;    // A
+                    }
+                    else
+                    {
+                        // red
+                        dst[i * 4 + 0] = 80;    // R
+                        dst[i * 4 + 1] = 0;     // G
+                        dst[i * 4 + 2] = 0;     // B
+                        dst[i * 4 + 3] = 110;   // A
+                    }
+                }
+            }
+        }
+
+        using var paint = new SKPaint { IsAntialias = false, FilterQuality = SKFilterQuality.None };
+        canvas.DrawBitmap(_buildableBitmap, new SKRect(0, 0, w, h), paint);
+    }
+
     private void DrawGrid(SKCanvas canvas)
     {
         if (_map == null) return;
@@ -1207,17 +1377,20 @@ public class SkiaMapControl : Panel
                 return;
             }
 
+            bool isCtrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
             // Single-prop placement: a prop is picked in the bottom icon menu and the brush is off.
-            // BUT: selection takes priority. If the click lands on an existing marker/prop/unit,
-            // select it instead of placing on top. Hold Ctrl to force placement over a target.
-            if (IsSinglePlaceActive && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            // Selection still takes priority over existing elements (no placement on top — user
+            // must Esc out of the menu first). Ctrl is reserved for select-similar (handled on
+            // release), so it never forces placement.
+            if (IsSinglePlaceActive && !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && !isCtrl)
             {
                 var (mx, my) = ScreenToMap(_lastMouse);
                 bool overExisting =
                     HitTestMarker(mx, my) != null ||
                     HitTestProp(mx, my) != null ||
                     HitTestUnitSpawn(mx, my) != null;
-                if (!overExisting || e.KeyModifiers.HasFlag(KeyModifiers.Control))
+                if (!overExisting)
                 {
                     SinglePlaceProp?.Invoke(mx, my);
                     _isDragging = true;
@@ -1233,6 +1406,12 @@ public class SkiaMapControl : Panel
                 _isBoxSelecting = true;
                 _boxStartScreen = _lastMouse;
                 _boxEndScreen = _lastMouse;
+            }
+            // Ctrl: no drag setup. The select-similar action runs on release so a stationary click
+            // expands the multi-selection without inadvertently starting a group drag.
+            else if (isCtrl)
+            {
+                // intentionally empty
             }
             // Group drag: if there's a multi-selection and the click lands on one of its members,
             // start a group drag instead of single-element drag/selection.
@@ -1297,6 +1476,7 @@ public class SkiaMapControl : Panel
         HoveredProp = null;
         HoveredPropIcon = null;
         HoveredPropName = null;
+        HoveredPropDescription = null;
         HasHoveredProp = false;
     }
 
@@ -1318,6 +1498,7 @@ public class SkiaMapControl : Panel
             HoveredProp = null;
             HoveredPropIcon = Services.MarkerCatalog.GetIcon(marker.Type);
             HoveredPropName = label;
+            HoveredPropDescription = Services.MarkerCatalog.GetDescription(marker.Type);
             HasHoveredProp = true;
             return;
         }
@@ -1330,6 +1511,7 @@ public class SkiaMapControl : Panel
             var entry = LookupCatalog(prop.BlueprintPath);
             HoveredPropIcon = entry?.Icon;
             HoveredPropName = entry?.DisplayName ?? System.IO.Path.GetFileNameWithoutExtension(prop.BlueprintPath);
+            HoveredPropDescription = null;
             HasHoveredProp = true;
             return;
         }
@@ -1344,6 +1526,7 @@ public class SkiaMapControl : Panel
             var entry = LookupCatalogByUnitId(unit.BlueprintId);
             HoveredPropIcon = entry?.Icon;
             HoveredPropName = unit.BlueprintId;
+            HoveredPropDescription = null;
             HasHoveredProp = true;
             return;
         }
@@ -1352,6 +1535,7 @@ public class SkiaMapControl : Panel
         HoveredProp = null;
         HoveredPropIcon = null;
         HoveredPropName = null;
+        HoveredPropDescription = null;
         HasHoveredProp = false;
     }
 
@@ -1483,8 +1667,24 @@ public class SkiaMapControl : Panel
         }
         else if (_isBoxSelecting)
         {
-            // Finalize box selection: collect every prop whose screen position falls within the rect.
-            FinalizeBoxSelection();
+            // Distinguish a true box-drag from a stationary Shift+click. The box is only
+            // meaningful if the cursor actually moved between press and release — otherwise the
+            // user just shift-clicked an element and expects it added to the multi-selection.
+            if (_isDragging)
+            {
+                FinalizeBoxSelection();
+            }
+            else
+            {
+                var (mapX, mapY) = ScreenToMap(e.GetPosition(this));
+                if (AddClickedToMultiSelection(mapX, mapY))
+                {
+                    SelectedMarker = null;
+                    SelectedProp = null;
+                    SelectedUnitSpawn = null;
+                    UnitSpawnSelected?.Invoke(null);
+                }
+            }
             _isBoxSelecting = false;
             RedrawBitmap();
         }
@@ -1516,6 +1716,19 @@ public class SkiaMapControl : Panel
             {
                 (mapX, mapY) = Snap(mapX, mapY);
                 MarkerPlaceRequested?.Invoke(mapX, mapY);
+            }
+            else if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                // Ctrl+click → multi-select every element similar to the one under the cursor
+                // (same MarkerType / BlueprintPath / BlueprintId). Clears any prior single
+                // selection. A miss on empty terrain leaves things untouched.
+                if (SelectAllSimilarAt(mapX, mapY))
+                {
+                    SelectedMarker = null;
+                    SelectedProp = null;
+                    SelectedUnitSpawn = null;
+                    UnitSpawnSelected?.Invoke(null);
+                }
             }
             else
             {

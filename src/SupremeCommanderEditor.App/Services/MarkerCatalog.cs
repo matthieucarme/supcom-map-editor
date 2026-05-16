@@ -20,6 +20,33 @@ public static class MarkerCatalog
     /// <summary>Lookup the rendered icon for a marker type (or null if not in the catalog).</summary>
     public static Bitmap? GetIcon(MarkerType type) => _iconsByType.TryGetValue(type, out var b) ? b : null;
 
+    /// <summary>Short English description of what a marker is for. Shown in the 2D hover popup so
+    /// new mappers learn the role of each strategic / AI / engine marker without having to
+    /// cross-reference the wiki.</summary>
+    public static string GetDescription(MarkerType type) => type switch
+    {
+        MarkerType.Mass               => "Mass deposit — build a Mass Extractor here.",
+        MarkerType.Hydrocarbon        => "Hydrocarbon deposit — build a Hydrocarbon Power Plant (higher yield than standard fusion).",
+        MarkerType.BlankMarker        => "Player start location (ARMY_N) or generic script reference.",
+        MarkerType.ExpansionArea      => "AI expansion target — build a forward base here.",
+        MarkerType.LargeExpansionArea => "AI large expansion — build a full base with defenses.",
+        MarkerType.NavalArea          => "AI naval target — control point at sea.",
+        MarkerType.DefensePoint       => "AI defensive anchor — concentrate defenses here.",
+        MarkerType.CombatZone         => "AI combat zone — push armies through this area.",
+        MarkerType.RallyPoint         => "Rally point — default destination for newly produced units.",
+        MarkerType.NavalRallyPoint    => "Naval rally point — destination for newly produced naval units.",
+        MarkerType.ProtectedExperimentalConstruction => "Experimental build site — protected location for experimental factories.",
+        MarkerType.LandPathNode       => "AI land pathfinding node — connects the land movement graph.",
+        MarkerType.AirPathNode        => "AI air pathfinding node — connects the air movement graph.",
+        MarkerType.WaterPathNode      => "AI water pathfinding node — connects the naval movement graph.",
+        MarkerType.AmphibiousPathNode => "AI amphibious pathfinding node — connects the amphibious movement graph.",
+        MarkerType.CameraInfo         => "Initial camera position — used at mission/game start.",
+        MarkerType.WeatherGenerator   => "Spawns weather effects (clouds, rain, snow) in its area.",
+        MarkerType.WeatherDefinition  => "Weather template referenced by Weather Generators.",
+        MarkerType.Effect             => "Visual effect spawn (smoke, fire, sparkles, etc.).",
+        _                             => string.Empty,
+    };
+
     private static readonly Dictionary<MarkerType, Bitmap> _iconsByType = new();
 
     /// <summary>

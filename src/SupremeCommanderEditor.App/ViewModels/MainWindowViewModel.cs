@@ -63,6 +63,7 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private bool _showDiagonalGrid;
     [ObservableProperty] private bool _snapToGrid;
     [ObservableProperty] private int _gridStep = 32;
+    [ObservableProperty] private bool _showBuildableOverlay;
 
     /// <summary>Bumped whenever the marker list/positions change. Views observe this to refresh.</summary>
     [ObservableProperty] private int _markerVersion;
@@ -1521,8 +1522,25 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>When true, symmetry only mirrors heightmap + splatmaps; markers, props, and
     /// pre-placed units stay where they are. Default off — most symmetry use-cases want the whole
-    /// scene mirrored. Toggle exposed in the Symmetry tab.</summary>
+    /// scene mirrored. Toggle exposed in the Symmetry tab. Mutually exclusive with
+    /// <see cref="SymmetryResourcesOnly"/>.</summary>
     [ObservableProperty] private bool _symmetryTerrainOnly;
+
+    /// <summary>When true, symmetry only mirrors resource markers (Mass + Hydrocarbon); the
+    /// heightmap and every other entity stay where they are. Mutually exclusive with
+    /// <see cref="SymmetryTerrainOnly"/>.</summary>
+    [ObservableProperty] private bool _symmetryResourcesOnly;
+
+    // Either of the two scope flags being checked disables the other so the user can't pick a
+    // contradictory combination. The default unchecked state means "Full" symmetry.
+    partial void OnSymmetryTerrainOnlyChanged(bool value)
+    {
+        if (value && SymmetryResourcesOnly) SymmetryResourcesOnly = false;
+    }
+    partial void OnSymmetryResourcesOnlyChanged(bool value)
+    {
+        if (value && SymmetryTerrainOnly) SymmetryTerrainOnly = false;
+    }
 
     /// <summary>Mirror = reflect across the dividing axis (default). Rotational = rotate around
     /// the map's center (180° for 2-region patterns, 90° chain for 4-region patterns).
@@ -1551,31 +1569,52 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// Apply a one-shot symmetry pattern: the chosen source region is replicated into the others.
-    /// Mirrors heightmap, splatmaps, and — unless <see cref="SymmetryTerrainOnly"/> is set —
-    /// markers, props, and per-army pre-placed units.
+    /// Scope depends on the two flags — <see cref="SymmetryTerrainOnly"/> (heightmap + splatmaps),
+    /// <see cref="SymmetryResourcesOnly"/> (Mass/Hydro markers), neither = full mirror.
     /// </summary>
     public void ApplySymmetry(SymmetryPattern pattern, SymmetryRegion source)
     {
         if (CurrentMap == null) return;
-        bool terrainOnly = SymmetryTerrainOnly;
-        var op = new SymmetryApplyOp(CurrentMap, pattern, source, SymmetryMode, terrainOnly);
+        var scope = SymmetryTerrainOnly
+            ? SymmetryApplyOp.SymmetryScope.TerrainOnly
+            : SymmetryResourcesOnly
+                ? SymmetryApplyOp.SymmetryScope.ResourcesOnly
+                : SymmetryApplyOp.SymmetryScope.Full;
+
+        var op = new SymmetryApplyOp(CurrentMap, pattern, source, SymmetryMode, scope);
         op.Execute();
         UndoRedo.PushExecuted(op);
-        if (!terrainOnly)
+
+        // Bump the version counters that actually changed so views refresh exactly what's stale.
+        switch (scope)
         {
-            MarkerCount = CurrentMap.Markers.Count;
-            PropCount = CurrentMap.Props.Count;
-            MarkerVersion++;
-            PropVersion++;
-            SelectedMarker = null;
-            SelectedProp = null;
-            SelectedUnitSpawn = null;
+            case SymmetryApplyOp.SymmetryScope.TerrainOnly:
+                TexturesVersion++;
+                HeightmapVersion++;
+                break;
+            case SymmetryApplyOp.SymmetryScope.ResourcesOnly:
+                MarkerCount = CurrentMap.Markers.Count;
+                MarkerVersion++;
+                SelectedMarker = null;
+                break;
+            default:
+                MarkerCount = CurrentMap.Markers.Count;
+                PropCount = CurrentMap.Props.Count;
+                MarkerVersion++;
+                PropVersion++;
+                SelectedMarker = null;
+                SelectedProp = null;
+                SelectedUnitSpawn = null;
+                TexturesVersion++;
+                HeightmapVersion++;
+                break;
         }
-        TexturesVersion++;
-        HeightmapVersion++;
-        StatusText = terrainOnly
-            ? $"Symmetry applied (terrain only, {SymmetryMode}): {pattern} from {source}"
-            : $"Symmetry applied ({SymmetryMode}): {pattern} from {source}";
+        StatusText = scope switch
+        {
+            SymmetryApplyOp.SymmetryScope.TerrainOnly  => $"Symmetry applied (terrain only, {SymmetryMode}): {pattern} from {source}",
+            SymmetryApplyOp.SymmetryScope.ResourcesOnly => $"Symmetry applied (resources only, {SymmetryMode}): {pattern} from {source}",
+            _ => $"Symmetry applied ({SymmetryMode}): {pattern} from {source}",
+        };
     }
 
     /// <summary>Snapshot the current selection into the internal clipboard. No-op if nothing is selected.</summary>

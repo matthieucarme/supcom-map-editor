@@ -10,11 +10,13 @@ namespace SupremeCommanderEditor.Core.Operations;
 /// </summary>
 public class SymmetryApplyOp : IMapOperation
 {
+    public enum SymmetryScope { Full, TerrainOnly, ResourcesOnly }
+
     private readonly ScMap _map;
     private readonly SymmetryPattern _pattern;
     private readonly SymmetryRegion _source;
     private readonly SymmetryMode _mode;
-    private readonly bool _terrainOnly;
+    private readonly SymmetryScope _scope;
 
     private ushort[]? _prevHeightmap;
     private byte[]? _prevMaskLow;
@@ -23,40 +25,52 @@ public class SymmetryApplyOp : IMapOperation
     private List<Prop>? _prevProps;
     private Dictionary<Army, List<UnitSpawn>>? _prevUnits;
 
-    public string Description => _terrainOnly
-        ? $"Symmetry {_pattern} ({_mode}) terrain ({_source})"
-        : $"Symmetry {_pattern} ({_mode}) ({_source})";
+    public string Description => _scope switch
+    {
+        SymmetryScope.TerrainOnly  => $"Symmetry {_pattern} ({_mode}) terrain ({_source})",
+        SymmetryScope.ResourcesOnly => $"Symmetry {_pattern} ({_mode}) resources ({_source})",
+        _ => $"Symmetry {_pattern} ({_mode}) ({_source})",
+    };
 
-    /// <param name="terrainOnly">When true, only the heightmap and splatmaps are mirrored;
-    /// markers, props, and per-army pre-placed units stay where they are. Useful for refining a
-    /// generated map's terrain without scrambling the already-balanced spawn layout.</param>
-    public SymmetryApplyOp(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror, bool terrainOnly = false)
+    /// <param name="scope">Selects which slices of the map are mirrored. Full = the works
+    /// (heightmap + splatmaps + every entity). TerrainOnly = heightmap + splatmaps, entities
+    /// untouched. ResourcesOnly = Mass + Hydrocarbon markers only, terrain and everything else
+    /// stay put.</param>
+    public SymmetryApplyOp(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror, SymmetryScope scope = SymmetryScope.Full)
     {
         _map = map;
         _pattern = pattern;
         _source = source;
         _mode = mode;
-        _terrainOnly = terrainOnly;
+        _scope = scope;
     }
 
     public void Execute()
     {
-        // Snapshot before mutating so Undo can restore. Skip the entity snapshots in terrain-only
-        // mode — those lists aren't touched and copying them would be wasted memory.
-        _prevHeightmap = (ushort[])_map.Heightmap.Data.Clone();
-        _prevMaskLow = (byte[])_map.TextureMaskLow.DdsData.Clone();
-        _prevMaskHigh = (byte[])_map.TextureMaskHigh.DdsData.Clone();
-
-        if (_terrainOnly)
+        // Snapshot before mutating. Each scope only touches a subset of the state — snapshot
+        // exactly that subset so Undo is correct and we don't waste memory on copies that won't
+        // be used.
+        switch (_scope)
         {
-            SymmetryService.ApplyTerrainOnly(_map, _pattern, _source, _mode);
-        }
-        else
-        {
-            _prevMarkers = [.._map.Markers];
-            _prevProps = [.._map.Props];
-            _prevUnits = _map.Info.Armies.ToDictionary(a => a, a => a.InitialUnits.ToList());
-            SymmetryService.Apply(_map, _pattern, _source, _mode);
+            case SymmetryScope.TerrainOnly:
+                _prevHeightmap = (ushort[])_map.Heightmap.Data.Clone();
+                _prevMaskLow = (byte[])_map.TextureMaskLow.DdsData.Clone();
+                _prevMaskHigh = (byte[])_map.TextureMaskHigh.DdsData.Clone();
+                SymmetryService.ApplyTerrainOnly(_map, _pattern, _source, _mode);
+                break;
+            case SymmetryScope.ResourcesOnly:
+                _prevMarkers = [.._map.Markers];
+                SymmetryService.ApplyResourcesOnly(_map, _pattern, _source, _mode);
+                break;
+            default:
+                _prevHeightmap = (ushort[])_map.Heightmap.Data.Clone();
+                _prevMaskLow = (byte[])_map.TextureMaskLow.DdsData.Clone();
+                _prevMaskHigh = (byte[])_map.TextureMaskHigh.DdsData.Clone();
+                _prevMarkers = [.._map.Markers];
+                _prevProps = [.._map.Props];
+                _prevUnits = _map.Info.Armies.ToDictionary(a => a, a => a.InitialUnits.ToList());
+                SymmetryService.Apply(_map, _pattern, _source, _mode);
+                break;
         }
     }
 

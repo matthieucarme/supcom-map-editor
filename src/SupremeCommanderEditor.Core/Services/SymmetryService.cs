@@ -267,6 +267,23 @@ public static class SymmetryService
         MirrorSplatmap(map.TextureMaskHigh, pattern, source, mode);
     }
 
+    /// <summary>Mirror just the resource markers (Mass + Hydrocarbon). Heightmap, splatmaps,
+    /// non-resource markers, props, and pre-placed units stay untouched. Useful when the user
+    /// has a hand-tuned terrain and only wants to enforce balanced resource placement.</summary>
+    public static void ApplyResourcesOnly(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror)
+    {
+        MirrorEntities(
+            map, map.Markers, pattern, source, mode,
+            getPos: m => m.Position,
+            setPos: (m, p) => m.Position = p,
+            clone: CloneMarker,
+            renameForRegion: (m, _, list) => m.Name = MakeUniqueMarkerName(m.Name, list),
+            includeFilter: IsResourceMarker);
+    }
+
+    private static bool IsResourceMarker(Marker m) =>
+        m.Type == MarkerType.Mass || m.Type == MarkerType.Hydrocarbon;
+
     public static void Apply(ScMap map, SymmetryPattern pattern, SymmetryRegion source, SymmetryMode mode = SymmetryMode.Mirror)
     {
         MirrorHeightmap(map.Heightmap, pattern, source, mode);
@@ -375,7 +392,8 @@ public static class SymmetryService
         Func<T, Vector3> getPos,
         Action<T, Vector3> setPos,
         Func<T, T> clone,
-        Action<T, SymmetryRegion, List<T>>? renameForRegion)
+        Action<T, SymmetryRegion, List<T>>? renameForRegion,
+        Func<T, bool>? includeFilter = null)
     {
         var hm = map.Heightmap;
         int w = hm.Width;
@@ -383,10 +401,21 @@ public static class SymmetryService
         var originals = entities.ToList();
         entities.Clear();
 
-        // Identify which originals lie in the source region — these are the seeds.
+        // When a filter is set, entities that don't match it are preserved verbatim (added back
+        // first so they keep their original ordering). Only matching entities go through the
+        // mirror routine. Without a filter, everything is fair game (legacy behaviour).
+        if (includeFilter != null)
+        {
+            foreach (var e in originals)
+                if (!includeFilter(e)) entities.Add(e);
+        }
+
+        // Identify which originals lie in the source region — these are the seeds. Filtered-out
+        // entities are skipped here too so they don't get duplicated into other regions.
         var seeds = new List<T>();
         foreach (var e in originals)
         {
+            if (includeFilter != null && !includeFilter(e)) continue;
             var p = getPos(e);
             float u = w > 0 ? Math.Clamp(p.X / w, 0f, 1f) : 0.5f;
             float v = h > 0 ? Math.Clamp(p.Z / h, 0f, 1f) : 0.5f;

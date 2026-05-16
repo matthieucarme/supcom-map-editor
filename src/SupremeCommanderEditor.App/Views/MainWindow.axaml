@@ -206,6 +206,8 @@
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <CheckBox Content="Grid" IsChecked="{Binding ShowGrid}"/>
                                 <CheckBox Content="Diagonals" IsChecked="{Binding ShowDiagonalGrid}"/>
+                                <CheckBox Content="Buildable" IsChecked="{Binding ShowBuildableOverlay}"
+                                          ToolTip.Tip="Green = flat enough for big buildings (T3 factory / shield / experimental). Red = too steep or underwater."/>
                                 <CheckBox Content="Snap" IsChecked="{Binding SnapToGrid}"/>
                                 <TextBlock Text="Step:" VerticalAlignment="Center"/>
                                 <ComboBox SelectedItem="{Binding GridStep}" Width="80">
@@ -314,6 +316,7 @@
                                                      PropBrushRadius="{Binding PropBrushRadius}"
                                                      ShowGrid="{Binding ShowGrid}"
                                                      ShowDiagonalGrid="{Binding ShowDiagonalGrid}"
+                                                     ShowBuildableOverlay="{Binding ShowBuildableOverlay}"
                                                      GridStep="{Binding GridStep}"
                                                      SnapToGrid="{Binding SnapToGrid}"/>
                             <!-- Mass amount overlay: small floating panel in the bottom-right of the
@@ -345,8 +348,12 @@
                                                RenderOptions.BitmapInterpolationMode="HighQuality"
                                                IsVisible="{Binding #SkiaViewport.HoveredPropIcon, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                                         <TextBlock Text="{Binding #SkiaViewport.HoveredPropName}" FontSize="11"
-                                                   Foreground="#DDD" HorizontalAlignment="Center" MaxWidth="120"
+                                                   Foreground="#DDD" HorizontalAlignment="Center" MaxWidth="220"
                                                    TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding #SkiaViewport.HoveredPropDescription}" FontSize="10"
+                                                   Foreground="#AAA" HorizontalAlignment="Center" MaxWidth="220"
+                                                   TextWrapping="Wrap" TextAlignment="Center"
+                                                   IsVisible="{Binding #SkiaViewport.HoveredPropDescription, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                     </StackPanel>
                                 </Border>
                             </Popup>
@@ -369,6 +376,10 @@
                                       IsChecked="{Binding SymmetryTerrainOnly}"
                                       Foreground="#DDD"
                                       ToolTip.Tip="When checked, only the heightmap and splatmaps are mirrored. Useful for refining a generated map's terrain without scrambling the already-balanced spawn layout."/>
+                            <CheckBox Content="Resources only (mirror Mass/Hydrocarbon, leave terrain and everything else)"
+                                      IsChecked="{Binding SymmetryResourcesOnly}"
+                                      Foreground="#DDD"
+                                      ToolTip.Tip="When checked, only Mass and Hydrocarbon markers are mirrored. Useful when you've hand-tuned the terrain and just want to enforce balanced resource placement. Mutually exclusive with 'Terrain only'."/>
                             <TextBlock Text="Mirror ×1" FontWeight="Bold" Foreground="#DDD"/>
                             <TextBlock Text="Click the half you want to keep — it will be mirrored to the other side."
                                        Foreground="#999" FontSize="11"/>
